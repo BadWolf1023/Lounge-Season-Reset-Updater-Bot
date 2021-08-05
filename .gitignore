@@ -2,3 +2,5 @@
 .pydevproject
 .project
 private.txt
+credentials.json
+*.pyc
