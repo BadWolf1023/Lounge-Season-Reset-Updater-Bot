@@ -103,7 +103,7 @@ def get_roles_to_remove(member, guild, role_ids_to_remove):
             roles_to_remove.append(role)
     return roles_to_remove
     
-async def __update_roles__(running_channel, guild, rating_func, previous_role_ids, cutoff_data, remove_old_role=False):
+async def __update_roles__(running_channel, guild, rating_func, previous_role_ids, cutoff_data, remove_old_role=False, track_type="RT"):
     members = guild.members if dont_modify_roles else guild.members
     for member in members:
         if has_any_role_id(member, previous_role_ids):
@@ -111,13 +111,13 @@ async def __update_roles__(running_channel, guild, rating_func, previous_role_id
             lookup_name = Player.get_lookup_name(member.display_name)
             
             if lookup_name not in all_player_data:
-                await running_channel.send(f"{member.mention} has previous roles that allow them to see echelons, but I can't find them on the Google Sheet.")
+                await running_channel.send(f"{member.mention} has previous {track_type} roles, but I can't find them on the Google Sheet.")
                 continue
 
             sheet_player = all_player_data[lookup_name]
             sheet_player_rating = rating_func(sheet_player)
             if sheet_player_rating is None:
-                await running_channel.send(f"{member.mention} has previous roles that allow them to see echelons, but their rating on Google Sheets is blank or invalid.")
+                await running_channel.send(f"{member.mention} has previous {track_type} roles, but their {track_type} rating on Google Sheets is blank or invalid.")
                 continue
         
             new_role_id = determine_new_role(sheet_player_rating, cutoff_data)
@@ -172,19 +172,19 @@ async def update_roles(running_channel, guild):
     
     await running_channel.send("--------- Validating RT Class Roles --------")
     rt_class_rating_func = lambda p: p.rt_mmr
-    await __update_roles__(running_channel, guild, rt_class_rating_func, RT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE, RT_CLASS_ROLE_CUTOFFS, False)
+    await __update_roles__(running_channel, guild, rt_class_rating_func, RT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE, RT_CLASS_ROLE_CUTOFFS, False, track_type="RT")
     
     await running_channel.send("--------- Validating CT Class Roles --------")
     ct_class_rating_func = lambda p: p.ct_mmr
-    await __update_roles__(running_channel, guild, ct_class_rating_func, CT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE, CT_CLASS_ROLE_CUTOFFS, False)
+    await __update_roles__(running_channel, guild, ct_class_rating_func, CT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE, CT_CLASS_ROLE_CUTOFFS, False, track_type="CT")
     
     await running_channel.send("--------- Validating RT Ranking Roles --------")
     rt_role_rating_func = lambda p: p.rt_lr
-    await __update_roles__(running_channel, guild, rt_role_rating_func, RT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE, RT_RANKING_ROLE_CUTOFFS, True)
+    await __update_roles__(running_channel, guild, rt_role_rating_func, RT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE, RT_RANKING_ROLE_CUTOFFS, True, track_type="RT")
     
     await running_channel.send("--------- Validating CT Ranking Roles --------")
     ct_role_rating_func = lambda p: p.ct_lr
-    await __update_roles__(running_channel, guild, ct_role_rating_func, CT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE, CT_RANKING_ROLE_CUTOFFS, True)
+    await __update_roles__(running_channel, guild, ct_role_rating_func, CT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE, CT_RANKING_ROLE_CUTOFFS, True, track_type="CT")
     
     
         
