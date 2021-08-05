@@ -76,13 +76,13 @@ CT_CLASS_ROLE_CUTOFFS = [(999, "CT Class F", 871740200215281744),
                          (None, "CT Class X", 871740054781976587)]
 
 #For players to get an updated RT Ranking role, they must have one of these role IDs first
-RT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE = {}
+RT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE = {data[2] for data in RT_RANKING_ROLE_CUTOFFS}
 #For players to get an updated CT Ranking role, they must have one of these role IDs first
-CT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE = {}
+CT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE = {data[2] for data in CT_RANKING_ROLE_CUTOFFS}
 #For players to get an updated RT Class role, they must have one of these role IDs first
-RT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE = {}
+RT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE = RT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE
 #For players to get an updated CT Class role, they must have one of these role IDs first
-RT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE = {}
+CT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE = CT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE
 
 def has_any_role_id(member:discord.Member, role_ids):
     for role in member.roles:
@@ -96,7 +96,7 @@ def determine_new_role(sheet_player_rating, cutoff_data):
             return cutoff[2]
     return None
 
-async def get_roles_to_remove(member, guild, role_ids_to_remove):
+def get_roles_to_remove(member, guild, role_ids_to_remove):
     roles_to_remove = []
     for role in member.roles:
         if role.id in role_ids_to_remove:
@@ -104,7 +104,8 @@ async def get_roles_to_remove(member, guild, role_ids_to_remove):
     return roles_to_remove
     
 async def __update_roles__(running_channel, guild, rating_func, previous_role_ids, cutoff_data, remove_old_role=False):
-    for member in guild.members:
+    members = guild.members if dont_modify_roles else guild.members
+    for member in members:
         if has_any_role_id(member, previous_role_ids):
             #Need to update since they have previous role IDs
             lookup_name = Player.get_lookup_name(member.display_name)
@@ -131,12 +132,35 @@ async def __update_roles__(running_channel, guild, rating_func, previous_role_id
             
             if remove_old_role:
                 roles_to_remove = get_roles_to_remove(member, guild, previous_role_ids)
+                if len(roles_to_remove) == 0:
+                    await running_channel.send(f"{member.mention} had no previous roles to remove. This shouldn't be possible.")
+                    continue
+                
                 if not dont_modify_roles:
-                    await running_channel.send(f"{member.mention} removed roles: {','.join([role.name for role in roles_to_remove])}")
-                    #TODO: Fix
+                    try:
+                        await member.remove_roles(*roles_to_remove, reason=None, atomic=True)
+                    except:
+                        await running_channel.send(f"{member.mention} could not remove roles: {','.join([role.name for role in roles_to_remove])} - Discord Exception")
+                        continue
+                    
+                    #await running_channel.send(f"{member.mention} removed roles: {','.join([role.name for role in roles_to_remove])}")
                 else:
                     await running_channel.send(f"{member.mention} would remove roles: {','.join([role.name for role in roles_to_remove])}")
                     
+                
+            
+            if dont_modify_roles:
+                #await running_channel.send(f"{member.mention} would add roles: {new_role_obj.name}")
+                pass
+            else:
+                try:
+                    await member.add_roles(new_role_obj, reason=None, atomic=True)
+                except:
+                    await running_channel.send(f"{member.mention} could not add roles: {new_role_obj.name} - Discord Exception")
+                
+                
+                await running_channel.send(f"{member.mention} added roles: {new_role_obj.name}")
+
                 
             
             
@@ -145,6 +169,22 @@ async def __update_roles__(running_channel, guild, rating_func, previous_role_id
 
 async def update_roles(running_channel, guild):
     await running_channel.send(f"Lounge server has {len(guild.members)} members.")
+    
+    await running_channel.send("--------- Validating RT Class Roles --------")
+    rt_class_rating_func = lambda p: p.rt_mmr
+    await __update_roles__(running_channel, guild, rt_class_rating_func, RT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE, RT_CLASS_ROLE_CUTOFFS, False)
+    
+    await running_channel.send("--------- Validating CT Class Roles --------")
+    ct_class_rating_func = lambda p: p.ct_mmr
+    await __update_roles__(running_channel, guild, ct_class_rating_func, CT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE, CT_CLASS_ROLE_CUTOFFS, False)
+    
+    await running_channel.send("--------- Validating RT Ranking Roles --------")
+    rt_role_rating_func = lambda p: p.rt_lr
+    await __update_roles__(running_channel, guild, rt_role_rating_func, RT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE, RT_RANKING_ROLE_CUTOFFS, True)
+    
+    await running_channel.send("--------- Validating CT Ranking Roles --------")
+    ct_role_rating_func = lambda p: p.ct_lr
+    await __update_roles__(running_channel, guild, ct_role_rating_func, CT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE, CT_RANKING_ROLE_CUTOFFS, True)
     
     
         
@@ -187,6 +227,7 @@ async def main(server_id=lounge_server_id):
         print("I can't see the bots channel that I'm supposed to be running in.")
         return
     
+    await running_channel.send("Testing started.")
     
     await read_player_data_in(running_channel)
     
