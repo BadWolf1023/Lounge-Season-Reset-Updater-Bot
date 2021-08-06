@@ -229,7 +229,7 @@ async def main(server_id=lounge_server_id):
         print("I can't see the bots channel that I'm supposed to be running in.")
         return
     
-    await running_channel.send("Testing started.")
+    await running_channel.send("Updating roles started.")
     
     await read_player_data_in(running_channel)
     
@@ -238,6 +238,8 @@ async def main(server_id=lounge_server_id):
     
     if dont_modify_roles:
         await running_channel.send("Testing ended.")
+    else:
+        await running_channel.send("Finished updating roles.")
     
     
     
