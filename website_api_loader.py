@@ -3,71 +3,258 @@ Created on Aug 21, 2021
 
 @author: willg
 '''
-import requests
-rt_specific_url = "https://mariokartboards.com/lounge/api/ladderplayer.php?ladder_id=1&all=1"
-ct_specific_url = "https://mariokartboards.com/lounge/api/ladderplayer.php?ladder_id=2&all=1"
-player_id_json_name = "player_id"
-player_name_json_name = "player_name"
-player_current_mmr_json_name = "current_mmr"
-player_current_lr_json_name = "current_lr"
-from common import *
-class BadAPIData(Exception):
-    pass
-
-#============== Synchronous HTTPS Functions ==============
-def fetch(url, headers=None):
-    response = requests.get(url)
-    return response.json()
+import CustomExceptions
+import core_data_loader
+import common
+from typing import List
+import discord
+RT_PLAYER_DATA_API_URL = "https://mariokartboards.com/lounge/api/ladderplayer.php?ladder_id=1&all=1"
+CT_PLAYER_DATA_API_URL = "https://mariokartboards.com/lounge/api/ladderplayer.php?ladder_id=2&all=1"
+RT_MMR_CUTOFF_API_URL = "https://mariokartboards.com/lounge/api/ladderclass.php?ladder_id=1"
+CT_MMR_CUTOFF_API_URL = "https://mariokartboards.com/lounge/api/ladderclass.php?ladder_id=2"
+RT_LR_CUTOFF_API_URL = "https://mariokartboards.com/lounge/api/ladderboundary.php?ladder_id=1"
+CT_LR_CUTOFF_API_URL = "https://mariokartboards.com/lounge/api/ladderboundary.php?ladder_id=2"
 
 
+
+
+class CutoffDataLoader:
+    order_json_name = "ladder_order"
+    lr_role_json_name = "ladder_boundary_name"
+    mmr_role_json_name = "ladder_class_name"
+    upper_lr_cutoff_json_name = "maximum_lr"
+    upper_mmr_cutoff_json_name = "maximum_mmr"
+    
+    
+    
+    
+    @staticmethod
+    def __lr_cutoff_data_is_corrupt__(data):
+        if not isinstance(data, dict) or "results" not in data or not isinstance(data["results"], list):
+            return True
+    
+        for cutoff_piece in data["results"]:
+            if CutoffDataLoader.order_json_name in cutoff_piece and isinstance(cutoff_piece[CutoffDataLoader.order_json_name], str) and common.isint(cutoff_piece[CutoffDataLoader.order_json_name])\
+            and CutoffDataLoader.lr_role_json_name in cutoff_piece and isinstance(cutoff_piece[CutoffDataLoader.lr_role_json_name], str) \
+            and CutoffDataLoader.upper_lr_cutoff_json_name in cutoff_piece and ((isinstance(cutoff_piece[CutoffDataLoader.upper_lr_cutoff_json_name], str) and common.isint(cutoff_piece[CutoffDataLoader.upper_lr_cutoff_json_name]) or cutoff_piece[CutoffDataLoader.upper_lr_cutoff_json_name] is None)):
+                continue
+            print(cutoff_piece)
+            return True
+        return False
+    
+    @staticmethod
+    def __mmr_cutoff_data_is_corrupt__(data):
+        if not isinstance(data, dict) or "results" not in data or not isinstance(data["results"], list):
+            return True
+        for cutoff_piece in data["results"]:
+            if CutoffDataLoader.order_json_name in cutoff_piece and isinstance(cutoff_piece[CutoffDataLoader.order_json_name], str) and common.isint(cutoff_piece[CutoffDataLoader.order_json_name])\
+            and CutoffDataLoader.mmr_role_json_name in cutoff_piece and isinstance(cutoff_piece[CutoffDataLoader.mmr_role_json_name], str) \
+            and CutoffDataLoader.upper_mmr_cutoff_json_name in cutoff_piece and ((isinstance(cutoff_piece[CutoffDataLoader.upper_mmr_cutoff_json_name], str) and common.isint(cutoff_piece[CutoffDataLoader.upper_mmr_cutoff_json_name]) or cutoff_piece[CutoffDataLoader.upper_mmr_cutoff_json_name] is None)):
+                continue
+            print(cutoff_piece)
+            return True
+        return False
+    
+    @staticmethod
+    async def __fix_cutoff_data__(cutoff_data:List, is_rt):
+        for cutoff_data_piece in cutoff_data:
+            cutoff_data_piece[CutoffDataLoader.order_json_name] = int(cutoff_data_piece[CutoffDataLoader.order_json_name])
+            to_append = "RT " if is_rt else "CT "
+            if CutoffDataLoader.lr_role_json_name in cutoff_data_piece:
+                cutoff_data_piece[CutoffDataLoader.lr_role_json_name] = to_append + cutoff_data_piece[CutoffDataLoader.lr_role_json_name]
+            else:
+                cutoff_data_piece[CutoffDataLoader.mmr_role_json_name] = to_append + cutoff_data_piece[CutoffDataLoader.mmr_role_json_name]
+                
+            if CutoffDataLoader.upper_lr_cutoff_json_name in cutoff_data_piece and cutoff_data_piece[CutoffDataLoader.upper_lr_cutoff_json_name] is not None:
+                cutoff_data_piece[CutoffDataLoader.upper_lr_cutoff_json_name] = int(cutoff_data_piece[CutoffDataLoader.upper_lr_cutoff_json_name])
+            elif CutoffDataLoader.upper_mmr_cutoff_json_name in cutoff_data_piece and cutoff_data_piece[CutoffDataLoader.upper_mmr_cutoff_json_name] is not None:
+                cutoff_data_piece[CutoffDataLoader.upper_mmr_cutoff_json_name] = int(cutoff_data_piece[CutoffDataLoader.upper_mmr_cutoff_json_name])
+        cutoff_data.sort(key=lambda data_piece: data_piece[CutoffDataLoader.order_json_name])
+                
+    
+    @staticmethod 
+    async def __update_common_cutoffs__(rt_mmr_cutoff_data, ct_mmr_cutoff_data, rt_lr_cutoff_data, ct_lr_cutoff_data, message_sender, verbose=False):
+        await CutoffDataLoader.__fix_cutoff_data__(rt_mmr_cutoff_data, is_rt=True)
+        await CutoffDataLoader.__fix_cutoff_data__(ct_mmr_cutoff_data, is_rt=False)
+        await CutoffDataLoader.__fix_cutoff_data__(rt_lr_cutoff_data, is_rt=True)
+        await CutoffDataLoader.__fix_cutoff_data__(ct_lr_cutoff_data, is_rt=False)
         
-def data_is_corrupt(data):
-    if not isinstance(data, dict) or "results" not in data or not isinstance(data["results"], list):
-        return True
-
-    for player_data in data["results"]:
-        if player_id_json_name in player_data and isinstance(player_data[player_id_json_name], str) and isint(player_data[player_id_json_name])\
-        and player_name_json_name in player_data and isinstance(player_data[player_name_json_name], str) \
-        and player_current_mmr_json_name in player_data and isinstance(player_data[player_current_mmr_json_name], str) and isint(player_data[player_current_mmr_json_name])\
-        and player_current_lr_json_name in player_data and isinstance(player_data[player_current_lr_json_name], str) and isint(player_data[player_current_lr_json_name]):
-            continue
-        print(player_data)
-        return True
-    return False
+        all_roles = message_sender.running_channel.guild.roles
         
-def merge_data(rt_data, ct_data):
-    results = {}
-    for player in rt_data:
-        player_id = player[player_id_json_name]
-        if player_id not in results:
-            results[player_id] = [None, None, None, None, None, None]
+        #RT Class role finding and loading
+        temp_rt_class_role_cutoffs = []
+        for data_piece in rt_mmr_cutoff_data:
+            role_name = data_piece[CutoffDataLoader.mmr_role_json_name]
+            fixed_role_name = role_name.lower().replace(" ", "")
+            role_id = None
+            for role in all_roles:
+                if role.name.lower().replace(" ", "") == fixed_role_name:
+                    role_id = role.id
+                    break
+            else:
+                error_message = f"No role found in the server named {role_name}"
+                await message_sender.queue_message(error_message)
+                raise CustomExceptions.NoRoleFound(error_message)
+            temp_rt_class_role_cutoffs.append((data_piece[CutoffDataLoader.upper_mmr_cutoff_json_name], role_name, role_id))
+        
+        #CT Class role finding and loading
+        temp_ct_class_role_cutoffs = []
+        for data_piece in ct_mmr_cutoff_data:
+            role_name = data_piece[CutoffDataLoader.mmr_role_json_name]
+            fixed_role_name = role_name.lower().replace(" ", "")
+            role_id = None
+            for role in all_roles:
+                if role.name.lower().replace(" ", "") == fixed_role_name:
+                    role_id = role.id
+                    break
+            else:
+                error_message = f"No role found in the server named {role_name}"
+                await message_sender.queue_message(error_message)
+                raise CustomExceptions.NoRoleFound(error_message)
+            temp_ct_class_role_cutoffs.append((data_piece[CutoffDataLoader.upper_mmr_cutoff_json_name], role_name, role_id))
             
-        results[player_id][0] = player[player_name_json_name]
-        results[player_id][1] = None
-        results[player_id][2] = player[player_current_mmr_json_name]
-        results[player_id][4] = player[player_current_lr_json_name]
-    
-    for player in ct_data:
-        player_id = player[player_id_json_name]
-        if player_id not in results:
-            results[player_id] = [None, None, None, None, None, None]
-            
-        results[player_id][0] = player[player_name_json_name]
-        results[player_id][1] = None
-        results[player_id][3] = player[player_current_mmr_json_name]
-        results[player_id][5] = player[player_current_lr_json_name]
+        #RT Ranking role finding and loading
+        temp_rt_rank_role_cutoffs = []
+        for data_piece in rt_lr_cutoff_data:
+            role_name = data_piece[CutoffDataLoader.lr_role_json_name]
+            fixed_role_name = role_name.lower().replace(" ", "")
+            role_id = None
+            for role in all_roles:
+                if role.name.lower().replace(" ", "") == fixed_role_name:
+                    role_id = role.id
+                    break
+            else:
+                error_message = f"No role found in the server named {role_name}"
+                await message_sender.queue_message(error_message)
+                raise CustomExceptions.NoRoleFound(error_message)
+            temp_rt_rank_role_cutoffs.append((data_piece[CutoffDataLoader.upper_lr_cutoff_json_name], role_name, role_id))
         
-    return list(results.values())
+        #CT Ranking role finding and loading
+        temp_ct_rank_role_cutoffs = []
+        for data_piece in ct_lr_cutoff_data:
+            role_name = data_piece[CutoffDataLoader.lr_role_json_name]
+            fixed_role_name = role_name.lower().replace(" ", "")
+            role_id = None
+            for role in all_roles:
+                if role.name.lower().replace(" ", "") == fixed_role_name:
+                    role_id = role.id
+                    break
+            else:
+                error_message = f"No role found in the server named {role_name}"
+                await message_sender.queue_message(error_message)
+                raise CustomExceptions.NoRoleFound(error_message)
+            temp_ct_rank_role_cutoffs.append((data_piece[CutoffDataLoader.upper_lr_cutoff_json_name], role_name, role_id))
+            
+
+        common.RT_CLASS_ROLE_CUTOFFS.clear()
+        common.RT_CLASS_ROLE_CUTOFFS.extend(temp_rt_class_role_cutoffs)
+        common.RT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE.clear()
+        common.RT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE.update({data[2] for data in common.RT_CLASS_ROLE_CUTOFFS})
+        
+
+        common.CT_CLASS_ROLE_CUTOFFS.clear()
+        common.CT_CLASS_ROLE_CUTOFFS.extend(temp_ct_class_role_cutoffs)
+        common.CT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE.clear()
+        common.CT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE.update({data[2] for data in common.CT_CLASS_ROLE_CUTOFFS})
+        
+
+        common.RT_RANKING_ROLE_CUTOFFS.clear()
+        common.RT_RANKING_ROLE_CUTOFFS.extend(temp_rt_rank_role_cutoffs)
+        common.RT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE.clear()
+        common.RT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE.update({data[2] for data in common.RT_RANKING_ROLE_CUTOFFS})
+
+        common.CT_RANKING_ROLE_CUTOFFS.clear()
+        common.CT_RANKING_ROLE_CUTOFFS.extend(temp_ct_rank_role_cutoffs)
+        common.CT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE.clear()
+        common.CT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE.update({data[2] for data in common.CT_RANKING_ROLE_CUTOFFS})
+        
     
-def get_player_data():
-    rt_data = fetch(rt_specific_url)
-    ct_data = fetch(ct_specific_url)
     
-    if data_is_corrupt(rt_data):
-        raise BadAPIData("RT Data was corrupt.")
-    if data_is_corrupt(ct_data):
-        raise BadAPIData("CT Data was corrupt.")
+    @staticmethod 
+    async def update_cutoff_data(message_sender, verbose=False):
+        rt_mmr_cutoff_data = await common.getJSONData(RT_MMR_CUTOFF_API_URL)
+        ct_mmr_cutoff_data = await common.getJSONData(CT_MMR_CUTOFF_API_URL)
+        rt_lr_cutoff_data = await common.getJSONData(RT_LR_CUTOFF_API_URL)
+        ct_lr_cutoff_data = await common.getJSONData(CT_LR_CUTOFF_API_URL)
+        
+        if CutoffDataLoader.__mmr_cutoff_data_is_corrupt__(rt_mmr_cutoff_data):
+            await message_sender.queue_message("RT MMR Cutoff Data was corrupt.")
+            raise CustomExceptions.CutoffAPIBadData("RT MMR Cutoff Data was corrupt.")
+        if CutoffDataLoader.__mmr_cutoff_data_is_corrupt__(ct_mmr_cutoff_data):
+            await message_sender.queue_message("CT MMR Cutoff Data was corrupt.")
+            raise CustomExceptions.CutoffAPIBadData("CT MMR Cutoff Data was corrupt.")
+        if CutoffDataLoader.__lr_cutoff_data_is_corrupt__(rt_lr_cutoff_data):
+            await message_sender.queue_message("RT LR Cutoff Data was corrupt.")
+            raise CustomExceptions.CutoffAPIBadData("RT LR Cutoff Data was corrupt.")
+        if CutoffDataLoader.__lr_cutoff_data_is_corrupt__(ct_lr_cutoff_data):
+            await message_sender.queue_message("CT LR Cutoff Data was corrupt.")
+            raise CustomExceptions.CutoffAPIBadData("CT LR Cutoff Data was corrupt.")
+        
+        return await CutoffDataLoader.__update_common_cutoffs__(rt_mmr_cutoff_data["results"], ct_mmr_cutoff_data["results"], rt_lr_cutoff_data["results"], ct_lr_cutoff_data["results"], message_sender, verbose)
+
+
+class PlayerDataLoader:
+    player_id_json_name = "player_id"
+    player_name_json_name = "player_name"
+    player_current_mmr_json_name = "current_mmr"
+    player_current_lr_json_name = "current_lr"
     
-    return merge_data(rt_data["results"], ct_data["results"])
+    @staticmethod
+    def player_data_is_corrupt(data):
+        if not isinstance(data, dict) or "results" not in data or not isinstance(data["results"], list):
+            return True
     
+        for player_data in data["results"]:
+            if PlayerDataLoader.player_id_json_name in player_data and isinstance(player_data[PlayerDataLoader.player_id_json_name], str) and common.isint(player_data[PlayerDataLoader.player_id_json_name])\
+            and PlayerDataLoader.player_name_json_name in player_data and isinstance(player_data[PlayerDataLoader.player_name_json_name], str) \
+            and PlayerDataLoader.player_current_mmr_json_name in player_data and isinstance(player_data[PlayerDataLoader.player_current_mmr_json_name], str) and common.isint(player_data[PlayerDataLoader.player_current_mmr_json_name])\
+            and PlayerDataLoader.player_current_lr_json_name in player_data and isinstance(player_data[PlayerDataLoader.player_current_lr_json_name], str) and common.isint(player_data[PlayerDataLoader.player_current_lr_json_name]):
+                continue
+            print(player_data)
+            return True
+        return False
+    
+    @staticmethod 
+    async def merge_data(rt_data, ct_data):
+        results = {}
+        for player in rt_data:
+            player_id = player[PlayerDataLoader.player_id_json_name]
+            if player_id not in results:
+                results[player_id] = [None, None, None, None, None, None]
+                
+            results[player_id][0] = player[PlayerDataLoader.player_name_json_name]
+            results[player_id][1] = None
+            results[player_id][2] = player[PlayerDataLoader.player_current_mmr_json_name]
+            results[player_id][4] = player[PlayerDataLoader.player_current_lr_json_name]
+        
+        for player in ct_data:
+            player_id = player[PlayerDataLoader.player_id_json_name]
+            if player_id not in results:
+                results[player_id] = [None, None, None, None, None, None]
+                
+            results[player_id][0] = player[PlayerDataLoader.player_name_json_name]
+            results[player_id][1] = None
+            results[player_id][3] = player[PlayerDataLoader.player_current_mmr_json_name]
+            results[player_id][5] = player[PlayerDataLoader.player_current_lr_json_name]
+            
+        return list(results.values())
+    
+    @staticmethod 
+    async def get_player_data(message_sender, verbose=False):
+        rt_data = await common.getJSONData(RT_PLAYER_DATA_API_URL)
+        ct_data = await common.getJSONData(CT_PLAYER_DATA_API_URL)
+        
+        if PlayerDataLoader.player_data_is_corrupt(rt_data):
+            await message_sender.queue_message("RT Data was corrupt.")
+            raise CustomExceptions.PlayerDataAPIBadData("RT Data was corrupt.")
+        if PlayerDataLoader.player_data_is_corrupt(ct_data):
+            await message_sender.queue_message("CT Data was corrupt.")
+            raise CustomExceptions.PlayerDataAPIBadData("CT Data was corrupt.")
+        
+        return await PlayerDataLoader.merge_data(rt_data["results"], ct_data["results"])
+        
+    @staticmethod
+    async def update_player_data(message_sender, verbose=False):
+        to_load = await PlayerDataLoader.get_player_data(message_sender, verbose)
+        await core_data_loader.read_player_data_in(message_sender, to_load, verbose)
     

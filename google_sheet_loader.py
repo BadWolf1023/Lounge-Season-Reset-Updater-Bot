@@ -18,5 +18,3 @@ def get_sheet_data():
     sheet = gc.open_by_key(SPREADSHEET_ID)
     cur_worksheet = sheet.worksheet(WORKSHEET_NAME)
     return cur_worksheet.get(SHEET_WORKING_RANGE)
-
-

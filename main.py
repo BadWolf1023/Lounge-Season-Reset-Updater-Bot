@@ -4,17 +4,25 @@ Created on Aug 5, 2021
 @author: willg
 '''
 import discord
+from discord.ext import commands, tasks
 import google_sheet_loader
 import website_api_loader
 import Player
+import common
+from ExtraChecks import owner_or_staff, lounge_only_check
+import CustomExceptions
+from datetime import datetime
+import queue
 
 invite_link = "https://discord.com/api/oauth2/authorize?client_id=872936275320139786&permissions=268470272&scope=bot"
 lounge_server_id = 387347467332485122
 running_channel_id = 775477321498361927
 
-dont_modify_roles = False
+
 finished_on_ready = False
 USING_SHEET = False
+USING_WEBSITE_FOR_CUTOFFS = True
+LOOP_TIME = 120
 
 
 def load_private_data():
@@ -27,64 +35,46 @@ def load_private_data():
         bot_key = all_lines[1]
         
 load_private_data()
-loaded_player_data = google_sheet_loader.get_sheet_data() if USING_SHEET else website_api_loader.get_player_data()
-all_player_data = {}
 
 
 
-#These are the cutoffs. If a player has less than or equal to the first number tuple, they will receive this role
-#Currently, for S7, this number is the current season's LR
-RT_RANKING_ROLE_CUTOFFS = [(1249, "RT Iron", 721162930456100935),
-                         (2499, "RT Bronze", 389456781698400258),
-                         (3749, "RT Silver", 667780593504878602),
-                         (4999, "RT Gold", 667780534084173836),
-                         (6499, "RT Platinum", 434562700740132874),
-                         (7999, "RT Emerald", 799030242643017802),
-                         (9499, "RT Ruby", 835170073785270283),
-                         (10999, "RT Diamond", 387348621189840906),
-                         (11999, "RT Master", 387348971699568642),
-                         (None, "RT Grandmaster", 800957400672501770)]
+class MessageSender(object):
+    TIME_BETWEEN_MESSAGES = 5
+    MAXIMUM_MESSAGE_LENGTH = 1999
+    def __init__(self, running_channel):
+        self.running_channel = running_channel
+        self.message_queue = queue.SimpleQueue()
+        self.last_message_sent = datetime.now()
+        self.copying = False
+    
+    async def queue_message(self, message_text):
+        self.message_queue.put(message_text + "\n")
+        
+        
+    @tasks.loop(seconds=TIME_BETWEEN_MESSAGES)
+    async def send_queued_messages(self):
+        await self.__background_sender__()
+        
+    async def __background_sender__(self):
+        to_send = ""
+        while True:
+            to_add = ""
+            try:
+                to_add = self.message_queue.get(block=False)
+            except queue.Empty:
+                break
+            
+            #Message would be too long, send part of it first
+            if len(to_send + to_add) >= MessageSender.MAXIMUM_MESSAGE_LENGTH:
+                await self.running_channel.send(to_send.strip("\n"))
+                to_send = ""
+            to_send += to_add
+                
+        #Send the constructed message
+        if len(to_send) > 0:
+            await self.running_channel.send(to_send.strip("\n"))
 
-CT_RANKING_ROLE_CUTOFFS = [(1249, "CT Iron", 721162976354238534),
-                         (2249, "CT Bronze", 521027322846117890),
-                         (3499, "CT Silver", 684567072856080404),
-                         (4749, "CT Gold", 521028250424573962),
-                         (6249, "CT Platinum", 520796951445504000),
-                         (7499, "CT Emerald", 800956334123909130),
-                         (8999, "CT Ruby", 871975113250181180),
-                         (10999, "CT Diamond", 521028390719848468),
-                         (11999, "CT Master", 520796895962988591),
-                         (None, "CT Grandmaster", 800957596780724244)]
 
-
-#These are the cutoffs. If a player has less than or equal to the first number tuple
-#Currently, for S7, this number is the previous season's MMR
-RT_CLASS_ROLE_CUTOFFS = [(999, "RT Class F", 871740169290674236),
-                         (2499, "RT Class E", 871740123182690314),
-                         (3999, "RT Class D", 871739925794525185),
-                         (5499, "RT Class C", 871739875383181333),
-                         (6499, "RT Class B", 871739761574969384),
-                         (7449, "RT Class A", 871739726065963008),
-                         (8999, "RT Class S", 871739972313575465),
-                         (None, "RT Class X", 871740024155168829)]
-
-CT_CLASS_ROLE_CUTOFFS = [(999, "CT Class F", 871740200215281744),
-                         (2249, "CT Class E", 871739950457040916),
-                         (3249, "CT Class D", 871740313444704296),
-                         (4999, "CT Class C", 871739900393844776),
-                         (5999, "CT Class B", 871739853237264404),
-                         (7249, "CT Class A", 871739791203524608),
-                         (8749, "CT Class S", 871740002051174400),
-                         (None, "CT Class X", 871740054781976587)]
-
-#For players to get an updated RT Ranking role, they must have one of these role IDs first
-RT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE = {data[2] for data in RT_RANKING_ROLE_CUTOFFS}
-#For players to get an updated CT Ranking role, they must have one of these role IDs first
-CT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE = {data[2] for data in CT_RANKING_ROLE_CUTOFFS}
-#For players to get an updated RT Class role, they must have one of these role IDs first
-RT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE = {data[2] for data in RT_CLASS_ROLE_CUTOFFS}
-#For players to get an updated CT Class role, they must have one of these role IDs first
-CT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE = {data[2] for data in CT_CLASS_ROLE_CUTOFFS}
 
 def has_any_role_id(member:discord.Member, role_ids):
     for role in member.roles:
@@ -94,7 +84,7 @@ def has_any_role_id(member:discord.Member, role_ids):
 
 def determine_new_role(player_rating, cutoff_data):
     for cutoff in cutoff_data:
-        if cutoff[0] is None or player_rating < cutoff[0]:
+        if cutoff[0] is None or player_rating <= cutoff[0]:
             return cutoff[2]
     return None
 
@@ -123,78 +113,82 @@ def has_role(member:discord.Member, role_to_find):
     return False
             
     
-async def __update_roles__(running_channel, guild, rating_func, previous_role_ids, cutoff_data, remove_old_role=False, track_type="RT", role_type="Class"):
-    members = guild.members[:500] if dont_modify_roles else guild.members
+async def __update_roles__(message_sender, guild:discord.Guild, rating_func, previous_role_ids, cutoff_data, remove_old_role=False, track_type="RT", role_type="Class", verbose_output=True, modify_roles=True):
+    members = guild.members if modify_roles else guild.members[:500]
     
-    to_send = []
-    to_send_counter = 0
     for ind, member in enumerate(members):
         if ind % 300 == 0:
-            await running_channel.send(f"---- {int(ind/len(members) * 100)}% finished with {track_type} {role_type} role updating.")
+            if verbose_output:
+                await message_sender.queue_message(f"---- {int(ind/len(members) * 100)}% finished with {track_type} {role_type} role updating.")
         if has_any_role_id(member, previous_role_ids):
             #Need to update since they have previous role IDs
             lookup_name = Player.get_lookup_name(member.display_name)
             
-            if lookup_name not in all_player_data:
-                await running_channel.send(f"---- {member.mention} has previous {track_type} roles, but I can't find them on the {'Google Sheet' if USING_SHEET else 'Website'}.")
+            if lookup_name not in common.all_player_data:
+                await message_sender.queue_message(f"---- {member.mention} has previous {track_type} roles, but I can't find them on the {'Google Sheet' if USING_SHEET else 'Website'}.")
                 continue
 
-            sheet_player = all_player_data[lookup_name]
-            player_rating = rating_func(sheet_player)
+            player_data = common.all_player_data[lookup_name]
+            player_rating = rating_func(player_data)
             if player_rating is None:
-                await running_channel.send(f"---- {member.mention} has previous {track_type} roles, but their {track_type} rating on {'Google Sheet' if USING_SHEET else 'the Website'} is blank or invalid.")
+                await message_sender.queue_message(f"---- {member.mention} has previous {track_type} roles, but their {track_type} rating on {'Google Sheet' if USING_SHEET else 'the Website'} is blank or invalid.")
                 continue
         
             new_role_id = determine_new_role(player_rating, cutoff_data)
             if new_role_id is None:
-                await running_channel.send(f"---- {member.mention} could not determine new role ID for some reason, player rating is {player_rating}")
+                await message_sender.queue_message(f"---- {member.mention} could not determine new role ID for some reason, player rating is {player_rating}")
                 continue
             
             new_role_obj = guild.get_role(new_role_id)
             if new_role_obj is None:
-                await running_channel.send(f"---- {member.mention} could not find the following role ID in the server: {new_role_id}")
+                await message_sender.queue_message(f"---- {member.mention} could not find the following role ID in the server: {new_role_id}")
                 continue
             
             if remove_old_role:
                 roles_to_remove = get_roles_to_remove(member, guild, previous_role_ids)
                 if len(roles_to_remove) == 0:
-                    await running_channel.send(f"---- {member.mention} had no previous roles to remove. This shouldn't be possible.")
+                    await message_sender.queue_message(f"---- {member.mention} had no previous roles to remove. This shouldn't be possible.")
                     continue
                 
                 #The above 3 lines ensure that they have a role to remove
                 #The 3 lines below throw out the new role from that list and check if we need to remove anything
                 #If we don't need to remove anything, don't
+                original_length = len(roles_to_remove)
+                original_roles = [r for r in roles_to_remove]
                 discard_role_from(new_role_obj, roles_to_remove)
                 if len(roles_to_remove) == 0:
                     continue
+                if original_length != len(roles_to_remove):
+                    await message_sender.queue_message(f"{member.mention} has multiple roles ({', '.join([r.name for r in original_roles])}). They are either temp-roled, or this is a mistake. I will not change their roles.")
+                    continue
                 
-                if not dont_modify_roles:
+                if modify_roles:
                     try:
                         await member.remove_roles(*roles_to_remove, reason=None, atomic=True)
                     except:
-                        await running_channel.send(f"---- {member.mention} could not remove roles: {','.join([role.name for role in roles_to_remove])} - Discord Exception")
+                        await message_sender.queue_message(f"---- {member.mention} could not remove roles: {','.join([role.name for role in roles_to_remove])} - Discord Exception")
                         continue
                     
-                    await running_channel.send(f"{member.mention} removed roles: {','.join([role.name for role in roles_to_remove])}")
+                    await message_sender.queue_message(f"{member.mention} removed roles: {','.join([role.name for role in roles_to_remove])}")
                 else:
-                    await running_channel.send(f"{member.mention} would remove roles: {','.join([role.name for role in roles_to_remove])}")
+                    await message_sender.queue_message(f"{member.mention} would remove roles: {','.join([role.name for role in roles_to_remove])}")
                     
                         
             #If they already have the role, don't bother wasting an API call to add it
             if has_any_role_id(member, [new_role_obj.id]):
                 continue
             
-            if dont_modify_roles:
-                await running_channel.send(f"{member.mention} would add roles: {new_role_obj.name}")
+            if not modify_roles:
+                await message_sender.queue_message(f"{member.mention} would add roles: {new_role_obj.name}")
                 pass
             else:
                 try:
                     await member.add_roles(new_role_obj, reason=None, atomic=True)
                 except:
-                    await running_channel.send(f"---- {member.mention} could not add roles: {new_role_obj.name} - Discord Exception")
+                    await message_sender.queue_message(f"---- {member.mention} could not add roles: {new_role_obj.name} - Discord Exception")
                 
                 
-                await running_channel.send(f"{member.mention} added roles: {new_role_obj.name}")
+                await message_sender.queue_message(f"{member.mention} added roles: {new_role_obj.name}")
 
                 
             
@@ -202,96 +196,247 @@ async def __update_roles__(running_channel, guild, rating_func, previous_role_id
                 
         
 
-async def update_roles(running_channel, guild):
-    await running_channel.send(f"Lounge server has {len(guild.members)} members.")
+async def update_roles(message_sender, guild, verbose=True, modify_roles=True):
+    if verbose:
+        await message_sender.queue_message(f"Lounge server has {len(guild.members)} members.")
     
-    await running_channel.send("--------------- Updating RT Class Roles ---------------")
+    if verbose:
+        await message_sender.queue_message("--------------- Updating RT Class Roles ---------------")
     rt_class_rating_func = lambda p: p.rt_mmr
-    await __update_roles__(running_channel, guild, rt_class_rating_func, RT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE, RT_CLASS_ROLE_CUTOFFS, True, track_type="RT", role_type="Class")
+    await __update_roles__(message_sender, guild, rt_class_rating_func, common.RT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE, common.RT_CLASS_ROLE_CUTOFFS, True, track_type="RT", role_type="Class", verbose_output=verbose, modify_roles=modify_roles)
     
-    await running_channel.send("--------------- Updating CT Class Roles ---------------")
+    if verbose:
+        await message_sender.queue_message("--------------- Updating CT Class Roles ---------------")
     ct_class_rating_func = lambda p: p.ct_mmr
-    await __update_roles__(running_channel, guild, ct_class_rating_func, CT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE, CT_CLASS_ROLE_CUTOFFS, True, track_type="CT", role_type="Class")
+    await __update_roles__(message_sender, guild, ct_class_rating_func, common.CT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE, common.CT_CLASS_ROLE_CUTOFFS, True, track_type="CT", role_type="Class", verbose_output=verbose, modify_roles=modify_roles)
     
-    await running_channel.send("--------------- Updating RT Ranking Roles ---------------")
+    if verbose:
+        await message_sender.queue_message("--------------- Updating RT Ranking Roles ---------------")
     rt_role_rating_func = lambda p: p.rt_lr
-    await __update_roles__(running_channel, guild, rt_role_rating_func, RT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE, RT_RANKING_ROLE_CUTOFFS, True, track_type="RT", role_type="Ranking")
+    await __update_roles__(message_sender, guild, rt_role_rating_func, common.RT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE, common.RT_RANKING_ROLE_CUTOFFS, True, track_type="RT", role_type="Ranking", verbose_output=verbose, modify_roles=modify_roles)
     
-    await running_channel.send("--------------- Updating CT Ranking Roles ---------------")
+    if verbose:
+        await message_sender.queue_message("--------------- Updating CT Ranking Roles ---------------")
     ct_role_rating_func = lambda p: p.ct_lr
-    await __update_roles__(running_channel, guild, ct_role_rating_func, CT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE, CT_RANKING_ROLE_CUTOFFS, True, track_type="CT", role_type="Ranking")
+    await __update_roles__(message_sender, guild, ct_role_rating_func, common.CT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE, common.CT_RANKING_ROLE_CUTOFFS, True, track_type="CT", role_type="Ranking", verbose_output=verbose, modify_roles=modify_roles)
     
     
-        
     
-    
-async def read_player_data_in(running_channel):
-    all_player_data.clear()
-    # Call the Sheets API
-    for player_data in loaded_player_data:
-        if len(player_data) == 0:
-            continue
-        
-        if len(player_data) > 0:
-            try:
-                cur_player = Player.Player(player_data)
-                lookup_name = cur_player.get_lookup_name()
-                if lookup_name in all_player_data:
-                    await running_channel.send(f"Warning: Duplicate player: {cur_player.name}")
-                else:
-                    all_player_data[lookup_name] = cur_player
-            except Player.BadDataGiven:
-                await running_channel.send(f"This data received contains bad data: {player_data}")
-    await running_channel.send(f"Read in {len(all_player_data)} players.\nData source (sheet or API) has a total of {len(loaded_player_data)} players.")
-    
-async def main(server_id=lounge_server_id):
-    lounge_server = client.get_guild(server_id)
+async def main(message_sender:MessageSender, verbose=True, modify_roles=True):
+    lounge_server = bot.get_guild(lounge_server_id)
     if lounge_server is None:
         print("I'm not in the Lounge server.")
-        return
-    
-    running_channel = client.get_channel(running_channel_id)
-    if running_channel is None:
-        print("I'm not in the Lounge server.")
+        raise CustomExceptions.FatalError("Not in Lounge")
         return
     
     try:
-        await running_channel.send("Hello, I'm back to automate your role removal and addition process. Please pay me, my 1's and 0's work so hard.")
-        await running_channel.send(f"I am now running. I **will {'NOT' if dont_modify_roles else ''}** be modifying roles in this server for this run.")
+        if verbose:
+            await message_sender.queue_message(f"""Hello, I'm back to automate your role removal and addition process. Please pay me, my 1's and 0's work so hard.
+I am now running. I **will {'' if modify_roles else 'NOT '}**be modifying roles in this server.
+
+Updating roles started.""")
+            
     except:
         print("I can't see the bots channel that I'm supposed to be running in.")
         return
     
-    await running_channel.send("Updating roles started.")
     
-    await read_player_data_in(running_channel)
-    
-    await update_roles(running_channel, lounge_server)
-    
-    
-    if dont_modify_roles:
-        await running_channel.send("Testing ended.")
+    if USING_SHEET:
+        pass
+        #google_sheet_loader.update_player_data() 
     else:
-        await running_channel.send("Finished updating roles.")
+        await website_api_loader.PlayerDataLoader.update_player_data(message_sender, verbose)
+
+    if USING_WEBSITE_FOR_CUTOFFS:
+        await website_api_loader.CutoffDataLoader.update_cutoff_data(message_sender, verbose)
     
+    await update_roles(message_sender, lounge_server, verbose, modify_roles)
+    
+    if verbose:
+        if not modify_roles:
+            await message_sender.queue_message("Testing ended.")
+        else:
+            await message_sender.queue_message("Finished updating roles.")
     
     
     
 
 
-client = discord.Client(intents=discord.Intents.all())
 
-@client.event
+bot = commands.Bot(owner_id=common.BAD_WOLF_ID, allowed_mentions=discord.mentions.AllowedMentions.none(), command_prefix=('!'), case_insensitive=True, intents=discord.Intents.all())
+
+
+@bot.event
 async def on_ready():
     global finished_on_ready
     if not finished_on_ready:
-        await main()
-        finished_on_ready = True
+        bot.add_cog(RoleUpdater(bot))
+        global message_sender
+        
+    finished_on_ready = True
+        
+@bot.event
+async def on_command_error(ctx, error):
+    if ctx.author.bot:
+        return
+    if isinstance(error, commands.CommandNotFound):
+        return
+    if isinstance(error, commands.MissingRequiredArgument):
+        try:
+            await(await ctx.send("Your command is missing an argument: `%s`" %
+                       str(error.param))).delete(delay=10)
+        except discord.Forbidden:
+            pass
+        return
+    if isinstance(error, commands.CommandOnCooldown):
+        try:
+            await(await ctx.send("This command is on cooldown; try again in %.0fs"
+                       % error.retry_after)).delete(delay=5)
+        except discord.Forbidden:
+            pass
 
-
-client.run(bot_key)
+        return
     
+    if isinstance(error, commands.MissingAnyRole):
+        try:
+            await(await ctx.send(f"You need to have one of the following roles to use this command: `{', '.join(error.missing_roles)}`",
+                             )
+            
+              ).delete(delay=10)
+        except discord.Forbidden:
+            pass
+        return
+    if isinstance(error, commands.BadArgument):
+        try:
+            await(await ctx.send("BadArgument Error: `%s`" % error.args)).delete(delay=10)
+        except discord.Forbidden:
+            pass
+        return
+    
+    if isinstance(error, commands.BotMissingPermissions):
+        try:
+            await(await ctx.send("I need the following permissions to use this command: %s"
+                       % ", ".join(error.missing_perms))).delete(delay=10)
+        except discord.Forbidden:
+            pass
+        return
+    if isinstance(error, commands.NoPrivateMessage):
+        return
+    if isinstance(error, commands.MissingPermissions):
+        try:
+            await(await ctx.send("You need the following permissions to use this command: %s"
+                       % ", ".join(error.missing_perms))).delete(delay=10)
+        except discord.Forbidden:
+            pass
+        return
+    
+    if isinstance(error, CustomExceptions.NotLounge):
+        return
+    
+    if isinstance(error, CustomExceptions.BadAPIData):
+        return
+    
+    
+    
+    if 'original' in error.__dict__:
+        if isinstance(error.original, discord.Forbidden):
+            #This should only run if bot can't send messages
+            return
+    
+    try:
+        await ctx.send("An unknown error happened. Contact Bad Wolf #1023 on Discord if this keeps happening.")
+    except discord.Forbidden:
+        pass
 
+    
+    raise error
 
+        
+    
+        
 
+class RoleUpdater(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+        self.message_sender_setup()
+        self.first_run = True
+        self.role_updating_task = self.__role_updating_task__.start()
+        
+    
+    def message_sender_setup(self):
+        lounge_server = self.bot.get_guild(lounge_server_id)
+        if lounge_server is None:
+            print("I'm not in the Lounge server.")
+            raise CustomExceptions.FatalError("Not in Lounge")
+            return
+        
+        running_channel = bot.get_channel(running_channel_id)
+        if running_channel is None:
+            print("I can't see the running channel.")
+            raise CustomExceptions.FatalError("Cannot see running channel.")
+            return
+        
+        self.message_sender = MessageSender(running_channel)
+        self.message_sender.send_queued_messages.start()
+        
 
+    @commands.command()
+    @commands.guild_only()
+    @lounge_only_check()
+    @commands.max_concurrency(number=1,wait=True)
+    @owner_or_staff()
+    async def resume(self, ctx):
+        """This command resumes the bot keeping everyone's role up to date, which runs every 120 seconds."""
+        if self.__role_updating_task__.is_running():
+            await ctx.send(f"The bot is already running role updating every {LOOP_TIME} seconds. If you want to stop it, do `!stop`")
+        else:
+            self.first_run = True
+            self.__role_updating_task__.start()
+            
+    @commands.command()
+    @commands.guild_only()
+    @lounge_only_check()
+    @commands.max_concurrency(number=1,wait=True)
+    @owner_or_staff()
+    async def stop(self, ctx):
+        """This command stops the bot from keeping everyone's role up to date every 120 seconds."""
+        if not self.__role_updating_task__.is_running():
+            await ctx.send(f"The bot is not updating roles in the background. If you want to start updating roles in the background, do `!resume`")
+        else:
+            self.first_run = True
+            self.__role_updating_task__.cancel()
+            await ctx.send(f"The bot has stopped updating roles in the background. If you want to start updating roles in the background again, do `!resume`")
+        
+    @commands.command()
+    @commands.guild_only()
+    @lounge_only_check()
+    @commands.max_concurrency(number=1,wait=True)
+    @owner_or_staff()
+    async def updateroles(self, ctx):
+        """This command resumes the bot keeping everyone's role up to date, which runs every 120 seconds."""
+        if self.__role_updating_task__.is_running():
+            await ctx.send(f"The bot is already running role updating every {LOOP_TIME} seconds. If you want to stop it and manually run the updating process **one time**, do `!stop` and then `!updateroles`. You should then start the automated role updating process again by doing `!resume`")
+        else:
+            await main(self.message_sender, verbose=True)
+            
+    @commands.command()
+    @commands.guild_only()
+    @lounge_only_check()
+    @commands.max_concurrency(number=1,wait=True)
+    @owner_or_staff()
+    async def hypotheticalroles(self, ctx):
+        """This command simply displays the roles each person were to receive and lose. It does not change anyone's roles."""
+        if self.__role_updating_task__.is_running():
+            await ctx.send(f"The bot is already running role updating every {LOOP_TIME} seconds. If you want to stop it and view the role's people would hypothetically lose and receive, do `!stop` and then `!hypotheticalroles`.")
+        else:
+            await main(self.message_sender, verbose=True, modify_roles=False)
+    
+    @tasks.loop(seconds=LOOP_TIME)
+    async def __role_updating_task__(self):
+        temp = self.first_run
+        self.first_run = False
+        await main(self.message_sender, verbose=temp)
+        
+
+bot.run(bot_key)
+    
