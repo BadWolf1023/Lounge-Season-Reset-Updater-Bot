@@ -1,7 +1,7 @@
 # Updater-Bot
 Helps with Updating Roles in Lounge
 
-Must have a credentials.json. Obtain through Google API Developer Account.
+IF you are using Google Sheets, must have a credentials.json. Obtain through Google API Developer Account.
 
 private.txt is where the full URL of the sheet goes and the bot key
 The full URL of the sheet goes on the first line
