@@ -3,7 +3,7 @@ Created on Aug 5, 2021
 
 @author: willg
 '''
-from common import *
+from common import isint
 
 class BadDataGiven(Exception):
     pass

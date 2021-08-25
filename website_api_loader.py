@@ -238,7 +238,7 @@ class PlayerDataLoader:
             results[player_id][5] = player[PlayerDataLoader.player_current_lr_json_name]
             
         return list(results.values())
-    
+
     @staticmethod 
     async def get_player_data(message_sender, verbose=False):
         rt_data = await common.getJSONData(RT_PLAYER_DATA_API_URL)
