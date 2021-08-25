@@ -9,14 +9,14 @@ import google_sheet_loader
 import website_api_loader
 import Player
 import common
-from ExtraChecks import owner_or_staff, lounge_only_check
+from ExtraChecks import owner_or_staff, lounge_only_check, badwolf_command_check
 import CustomExceptions
 from datetime import datetime
 import queue
 
 invite_link = "https://discord.com/api/oauth2/authorize?client_id=872936275320139786&permissions=268470272&scope=bot"
 lounge_server_id = 387347467332485122
-running_channel_id = 775477321498361927
+running_channel_id = 879957305007943710
 
 
 finished_on_ready = False
@@ -37,6 +37,11 @@ def load_private_data():
 load_private_data()
 
 
+async def safe_send(channel, message_text):
+    try:
+        await channel.send(message_text)
+    except:
+        print(f"Failed to send message: {message_text}")
 
 class MessageSender(object):
     TIME_BETWEEN_MESSAGES = 5
@@ -66,13 +71,13 @@ class MessageSender(object):
             
             #Message would be too long, send part of it first
             if len(to_send + to_add) >= MessageSender.MAXIMUM_MESSAGE_LENGTH:
-                await self.running_channel.send(to_send.strip("\n"))
+                await safe_send(self.running_channel, to_send.strip("\n"))
                 to_send = ""
             to_send += to_add
                 
         #Send the constructed message
         if len(to_send) > 0:
-            await self.running_channel.send(to_send.strip("\n"))
+            await safe_send(self.running_channel, to_send.strip("\n"))
 
 
 
@@ -125,29 +130,30 @@ async def __update_roles__(message_sender, guild:discord.Guild, rating_func, pre
             lookup_name = Player.get_lookup_name(member.display_name)
             
             if lookup_name not in common.all_player_data:
-                await message_sender.queue_message(f"---- {member.mention} has previous {track_type} roles, but I can't find them on the {'Google Sheet' if USING_SHEET else 'Website'}.")
+                await message_sender.queue_message(f"---- {common.get_member_info(member)} has previous {track_type} roles, but I can't find them on the {'Google Sheet' if USING_SHEET else 'Website'}.")
                 continue
 
             player_data = common.all_player_data[lookup_name]
             player_rating = rating_func(player_data)
             if player_rating is None:
-                await message_sender.queue_message(f"---- {member.mention} has previous {track_type} roles, but their {track_type} rating on {'Google Sheet' if USING_SHEET else 'the Website'} is blank or invalid.")
+                await message_sender.queue_message(f"---- {common.get_member_info(member)} has previous {track_type} roles, but their {track_type} rating on {'Google Sheet' if USING_SHEET else 'the Website'} is blank or invalid.")
                 continue
         
             new_role_id = determine_new_role(player_rating, cutoff_data)
             if new_role_id is None:
-                await message_sender.queue_message(f"---- {member.mention} could not determine new role ID for some reason, player rating is {player_rating}")
+                
+                await message_sender.queue_message(f"---- {common.get_member_info(member)} could not determine new role ID for some reason, player rating is {player_rating}")
                 continue
             
             new_role_obj = guild.get_role(new_role_id)
             if new_role_obj is None:
-                await message_sender.queue_message(f"---- {member.mention} could not find the following role ID in the server: {new_role_id}")
+                await message_sender.queue_message(f"---- {common.get_member_info(member)} could not find the following role ID in the server: {new_role_id}")
                 continue
             
             if remove_old_role:
                 roles_to_remove = get_roles_to_remove(member, guild, previous_role_ids)
                 if len(roles_to_remove) == 0:
-                    await message_sender.queue_message(f"---- {member.mention} had no previous roles to remove. This shouldn't be possible.")
+                    await message_sender.queue_message(f"---- {common.get_member_info(member)} had no previous roles to remove. This shouldn't be possible.")
                     continue
                 
                 #The above 3 lines ensure that they have a role to remove
@@ -159,19 +165,19 @@ async def __update_roles__(message_sender, guild:discord.Guild, rating_func, pre
                 if len(roles_to_remove) == 0:
                     continue
                 if original_length != len(roles_to_remove):
-                    await message_sender.queue_message(f"{member.mention} has multiple roles ({', '.join([r.name for r in original_roles])}). They are either temp-roled, or this is a mistake. I will not change their roles.")
+                    await message_sender.queue_message(f"{common.get_member_info(member)} has multiple roles ({', '.join([r.name for r in original_roles])}). They are either temp-roled, or this is a mistake. I will not change their roles.")
                     continue
                 
                 if modify_roles:
                     try:
                         await member.remove_roles(*roles_to_remove, reason=None, atomic=True)
                     except:
-                        await message_sender.queue_message(f"---- {member.mention} could not remove roles: {','.join([role.name for role in roles_to_remove])} - Discord Exception")
+                        await message_sender.queue_message(f"---- {common.get_member_info(member)} could not remove roles: {','.join([role.name for role in roles_to_remove])} - Discord Exception")
                         continue
                     
-                    await message_sender.queue_message(f"{member.mention} removed roles: {','.join([role.name for role in roles_to_remove])}")
+                    await message_sender.queue_message(f"{common.get_member_info(member)} removed roles: {','.join([role.name for role in roles_to_remove])}")
                 else:
-                    await message_sender.queue_message(f"{member.mention} would remove roles: {','.join([role.name for role in roles_to_remove])}")
+                    await message_sender.queue_message(f"{common.get_member_info(member)} would remove roles: {','.join([role.name for role in roles_to_remove])}")
                     
                         
             #If they already have the role, don't bother wasting an API call to add it
@@ -179,16 +185,16 @@ async def __update_roles__(message_sender, guild:discord.Guild, rating_func, pre
                 continue
             
             if not modify_roles:
-                await message_sender.queue_message(f"{member.mention} would add roles: {new_role_obj.name}")
+                await message_sender.queue_message(f"{common.get_member_info(member)} would add roles: {new_role_obj.name}")
                 pass
             else:
                 try:
                     await member.add_roles(new_role_obj, reason=None, atomic=True)
                 except:
-                    await message_sender.queue_message(f"---- {member.mention} could not add roles: {new_role_obj.name} - Discord Exception")
+                    await message_sender.queue_message(f"---- {common.get_member_info(member)} could not add roles: {new_role_obj.name} - Discord Exception")
                 
                 
-                await message_sender.queue_message(f"{member.mention} added roles: {new_role_obj.name}")
+                await message_sender.queue_message(f"{common.get_member_info(member)} added roles: {new_role_obj.name}")
 
                 
             
@@ -264,7 +270,6 @@ Updating roles started.""")
 
 
 bot = commands.Bot(owner_id=common.BAD_WOLF_ID, allowed_mentions=discord.mentions.AllowedMentions.none(), command_prefix=('!'), case_insensitive=True, intents=discord.Intents.all())
-
 
 @bot.event
 async def on_ready():
@@ -359,7 +364,8 @@ class RoleUpdater(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.message_sender_setup()
-        self.first_run = True
+        self.just_initialized = True
+        self.first_run = False
         self.role_updating_task = self.__role_updating_task__.start()
         
     
@@ -391,6 +397,49 @@ class RoleUpdater(commands.Cog):
             await ctx.send(f"The bot is already running role updating every {LOOP_TIME} seconds. If you want to stop it, do `!stop`")
         else:
             self.first_run = True
+            self.__role_updating_task__.start()
+            
+    @commands.command()
+    @commands.guild_only()
+    @lounge_only_check()
+    @commands.max_concurrency(number=1,wait=True)
+    @owner_or_staff()
+    async def resumetop(self, ctx, number_of_top_players: int):
+        """This command resumes the bot keeping the top x players "Top" roles up to date, which runs every 120 seconds. The normal role updating routine must be running already for this to work."""
+        await ctx.send(f"This is not yet implemented.")
+        return
+    
+    @commands.command()
+    @commands.guild_only()
+    @lounge_only_check()
+    @commands.max_concurrency(number=1,wait=True)
+    @owner_or_staff()
+    async def stoptop(self, ctx):
+        """This command stops the bot from keeping the top x players "Top" roles up to date every 120 seconds."""
+        await ctx.send(f"This is not yet implemented.")
+        return
+    
+    @commands.command()
+    @commands.guild_only()
+    @lounge_only_check()
+    @commands.max_concurrency(number=1,wait=True)
+    @owner_or_staff()
+    async def toprole(self, ctx, rt_or_ct:str, role_id:int):
+        """This command sets the Top X role id for either RTs or CTs."""
+        await ctx.send(f"This is not yet implemented.")
+        return
+            
+    @commands.command()
+    @commands.guild_only()
+    @lounge_only_check()
+    @commands.max_concurrency(number=1,wait=True)
+    @badwolf_command_check()
+    async def resume_suppress(self, ctx): #suppress
+        """This command resumes the bot keeping everyone's role up to date, which runs every 120 seconds, but spresses the first run's verbose output."""
+        if self.__role_updating_task__.is_running():
+            await ctx.send(f"The bot is already running role updating every {LOOP_TIME} seconds. If you want to stop it, do `!stop`")
+        else:
+            self.first_run = False
             self.__role_updating_task__.start()
             
     @commands.command()
@@ -433,10 +482,42 @@ class RoleUpdater(commands.Cog):
     
     @tasks.loop(seconds=LOOP_TIME)
     async def __role_updating_task__(self):
-        temp = self.first_run
+        temp = self.first_run and not self.just_initialized
+        if self.just_initialized:
+            await self.message_sender.queue_message("I'm running again.")
+        self.just_initialized = False
         self.first_run = False
-        await main(self.message_sender, verbose=temp)
-        
+        try:
+            await main(self.message_sender, verbose=temp)
+        except CustomExceptions.FatalError:
+            #Should we exit...?
+            print(f"{datetime.now()}: Fatal error.")
+            raise
+        except discord.Forbidden:
+            print(f"{datetime.now()}: Forbidden error.")
+            #We can't send messages, no big deal, staff probably made a mistake
+            pass
+        except CustomExceptions.NoRoleFound:
+            print(f"{datetime.now()}: No role found.")
+            pass
+        except CustomExceptions.PlayerDataAPIBadData:
+            print(f"{datetime.now()}: Bad data received from API for player.")
+            pass
+        except CustomExceptions.CutoffAPIBadData:
+            print(f"{datetime.now()}: Bad data received from API for cutoffs.")
+            pass
+        except CustomExceptions.BadAPIData:
+            print(f"{datetime.now()}: Bad data received from API. Other type of bad data, please make sure you specify and catch the exact exception, not just the base exception.")
+            pass
+        except Player.BadDataGiven:
+            print(f"{datetime.now()}: Bad data given to Player.")
+            pass
+        except Exception as e:
+            print(f"{datetime.now()}: Unknown error: {str(e)}")
+            try:
+                await self.message_sender.queue_message("An unknown error happened. Let Bad Wolf know (but don't ping him too much please).")
+            except:
+                pass
 
 bot.run(bot_key)
     
