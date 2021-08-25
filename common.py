@@ -9,7 +9,6 @@ TESTING_SERVER_ID = 739733336871665696
 BAD_WOLF_ID = 706120725882470460
 TESTING=True
 MKW_LOUNGE_GUILD_ID = 387347467332485122
-    
 DISCORD_MAX_MESSAGE_LEN = 2000
 SERVER_ID_TO_IMPERSONATE = None
 
@@ -37,6 +36,9 @@ RT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE = set()
 CT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE = set()
 
 all_player_data = {}
+
+#List will contain 2 items, rt role id in first index, ct role id in 2nd index
+top_role_ids = []
 
 
 def is_lounge(ctx):
@@ -72,3 +74,7 @@ def isint(value:str):
         return True
     except ValueError:
         return False
+
+
+def get_member_info(member):
+    return f"{member.mention} ({member.display_name} - {str(member)})"
