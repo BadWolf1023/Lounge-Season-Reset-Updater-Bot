@@ -11,9 +11,8 @@ import Player
 import common
 from ExtraChecks import owner_or_staff, lounge_only_check, badwolf_command_check
 import CustomExceptions
-from datetime import datetime
+from datetime import datetime, timedelta
 import queue
-
 invite_link = "https://discord.com/api/oauth2/authorize?client_id=872936275320139786&permissions=268470272&scope=bot"
 lounge_server_id = 387347467332485122
 running_channel_id = 879957305007943710
@@ -22,7 +21,8 @@ running_channel_id = 879957305007943710
 finished_on_ready = False
 USING_SHEET = False
 USING_WEBSITE_FOR_CUTOFFS = True
-LOOP_TIME = 120
+LOOP_TIME = 300
+HOURS_TO_ADD_TO_MAKE_EST = 3
 
 
 def load_private_data():
@@ -44,21 +44,60 @@ async def safe_send(channel, message_text):
         print(f"Failed to send message: {message_text}")
 
 class MessageSender(object):
-    TIME_BETWEEN_MESSAGES = 5
+    TIME_BETWEEN_MESSAGES = 10
     MAXIMUM_MESSAGE_LENGTH = 1999
+    TIME_BETWEEN_TEMPROLE_NOTIFICATIONS = timedelta(minutes=20) #20 minutes
+    
     def __init__(self, running_channel):
         self.running_channel = running_channel
         self.message_queue = queue.SimpleQueue()
         self.last_message_sent = datetime.now()
         self.copying = False
+        self.temp_role_message_history = {}
+        
+    def __temp_role_history_check__(self):
+        to_delete = set()
+        current_time = datetime.now()
+        for message, time_sent in self.temp_role_message_history:
+            if (current_time - time_sent) > MessageSender.TIME_BETWEEN_TEMPROLE_NOTIFICATIONS:
+                to_delete.add(message)
+                
+        for message_to_delete in to_delete:
+            try:
+                del self.temp_role_message_history[message_to_delete]
+            except Exception as e:
+                print(f"{datetime.now()}: {str(e)}")
+                self.message_queue.put("Let Bad Wolf know there was an error and to check the bot.\n")
+                pass
+                
+    async def queue_message(self, message_text, is_temp_role_message=False):
+        if not is_temp_role_message:
+            self.message_queue.put(message_text + "\n")
+        else:
+            current_time = datetime.now()
+            try:
+                last_sent = self.temp_role_message_history[message_text]
+            except KeyError: #the temprole message isn't in the history, so add it
+                self.message_queue.put(message_text + "\n")
+                self.temp_role_message_history[message_text] = current_time
+            else:
+                #The message was in the history
+                #If we've exceeded 20 minutes from the last time we sent a temprole message, add it to the queue and update the time
+                if (current_time - last_sent) > MessageSender.TIME_BETWEEN_TEMPROLE_NOTIFICATIONS:
+                    self.message_queue.put(message_text + "\n")
+                    self.temp_role_message_history[message_text] = current_time
+
     
-    async def queue_message(self, message_text):
-        self.message_queue.put(message_text + "\n")
+    @tasks.loop(hours=24)
+    async def history_checker_clearing(self):
+        self.__temp_role_history_check__()
+                    
         
         
     @tasks.loop(seconds=TIME_BETWEEN_MESSAGES)
     async def send_queued_messages(self):
         await self.__background_sender__()
+        
         
     async def __background_sender__(self):
         to_send = ""
@@ -91,6 +130,12 @@ def determine_new_role(player_rating, cutoff_data):
     for cutoff in cutoff_data:
         if cutoff[0] is None or player_rating <= cutoff[0]:
             return cutoff[2]
+    return None
+
+def determine_role_name(player_rating, cutoff_data):
+    for cutoff in cutoff_data:
+        if cutoff[0] is None or player_rating <= cutoff[0]:
+            return cutoff[1]
     return None
 
 def get_roles_to_remove(member, guild, role_ids_to_remove):
@@ -165,7 +210,7 @@ async def __update_roles__(message_sender, guild:discord.Guild, rating_func, pre
                 if len(roles_to_remove) == 0:
                     continue
                 if original_length != len(roles_to_remove):
-                    await message_sender.queue_message(f"{common.get_member_info(member)} has multiple roles ({', '.join([r.name for r in original_roles])}). They are either temp-roled, or this is a mistake. I will not change their roles.")
+                    await message_sender.queue_message(f"{common.get_member_info(member)} has multiple roles ({', '.join([r.name for r in original_roles])}). They are either temp-roled, or this is a mistake. I will not change their roles.", True)
                     continue
                 
                 if modify_roles:
@@ -265,7 +310,43 @@ Updating roles started.""")
             await message_sender.queue_message("Finished updating roles.")
     
     
+async def send_active_players(ctx, is_rt, last_x_days):
+    current_est_time = datetime.now() + timedelta(hours=HOURS_TO_ADD_TO_MAKE_EST)
+    need_to_have_played_after_date = current_est_time - timedelta(days=last_x_days)
+    get_mmr_and_date = None
+    if is_rt:
+        get_mmr_and_date = lambda x: (x.rt_mmr, x.rt_last_event)
+    else:
+        get_mmr_and_date = lambda y: (y.ct_mmr, y.ct_last_event)
     
+    cutoffs = common.RT_CLASS_ROLE_CUTOFFS if is_rt else common.CT_CLASS_ROLE_CUTOFFS
+    activity_reqs = {}
+    for cutoff_data in cutoffs:
+        activity_reqs[cutoff_data[1]] = [0, 0] #active players, total players
+    
+    for player_data in common.all_player_data.values():
+        mmr, last_event_date = get_mmr_and_date(player_data)
+        if mmr is None: #They haven't ever played this track type (RT or CT), so don't count them - skip
+            continue
+        if last_event_date == datetime.min: #They haven't played an event this season
+            continue
+        
+        class_name_for_player = determine_role_name(mmr, cutoffs)
+        activity_reqs[class_name_for_player][1] += 1
+        if last_event_date >= need_to_have_played_after_date:
+            activity_reqs[class_name_for_player][0] += 1
+    to_send = f"Number of active players in each {'RT' if is_rt else 'CT'} class during the last **{last_x_days} days**.\n**Note:** The total number of players is the number of players in the Class who have played 1 event or more this season.\n**Note:** The number of active players are the players that have played at least 1 event in the past **{last_x_days} days**, as you specified."
+    for cutoff_name, (active_players, total_players) in reversed(activity_reqs.items()):
+        percentage_active = 0.0
+        if total_players > 0:
+            percentage_active = active_players / total_players
+        percentage_active = round(100 * percentage_active, 3)
+        
+        
+        to_send += f"\n{cutoff_name}: {active_players} active players out of {total_players} total players ({percentage_active}%)"
+    
+    await ctx.reply(to_send)
+        
 
 
 
@@ -384,6 +465,7 @@ class RoleUpdater(commands.Cog):
         
         self.message_sender = MessageSender(running_channel)
         self.message_sender.send_queued_messages.start()
+        self.message_sender.history_checker_clearing.start()
         
 
     @commands.command()
@@ -428,6 +510,31 @@ class RoleUpdater(commands.Cog):
         """This command sets the Top X role id for either RTs or CTs."""
         await ctx.send(f"This is not yet implemented.")
         return
+    
+    @commands.command()
+    @commands.guild_only()
+    @lounge_only_check()
+    @commands.max_concurrency(number=1,wait=True)
+    @owner_or_staff()
+    async def activeplayers(self, ctx, rt_or_ct:str, number_of_days:int):
+        """This command shows the number of active players in each class. You can specify the number of activity time limit. If you're unsure, 5 days is a good activity time limit."""
+        if not self.__role_updating_task__.is_running():
+            await ctx.send(f"The bot needs to be updating roles in the background for this command to work. If you want to start updating roles in the background, do `!resume`")
+        else:
+            if number_of_days < 1 or number_of_days > 365:
+                await ctx.send(f'"{number_of_days}" is not a valid option. Valid options are between 1 days and 365 days.')
+                return
+            is_rt = None
+            if rt_or_ct.lower() == "rt":
+                is_rt = True
+            elif rt_or_ct.lower() == "ct":
+                is_rt = False
+            else:
+                await ctx.send(f'"{rt_or_ct}" is not a valid option. Valid options are: RT or CT')
+                return
+            
+            await send_active_players(ctx, is_rt, number_of_days)
+            
             
     @commands.command()
     @commands.guild_only()

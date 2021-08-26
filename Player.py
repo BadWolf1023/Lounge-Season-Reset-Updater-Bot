@@ -4,6 +4,7 @@ Created on Aug 5, 2021
 @author: willg
 '''
 from common import isint
+from datetime import datetime
 
 class BadDataGiven(Exception):
     pass
@@ -13,13 +14,25 @@ class Player:
         self.load_list(sheet_list)
         
     def load_list(self, sheet_list):
-        sheet_list = ["" if item is None else item.strip() for item in sheet_list]
+        temp_sheet_list = []
+        for item in sheet_list:
+            if item is None:
+                temp_sheet_list.append("")
+            elif isinstance(item, str):
+                temp_sheet_list.append(item.strip())
+            else:
+                temp_sheet_list.append(item)
+        sheet_list = temp_sheet_list
         self.name = None
         self.discord_id = None
         self.rt_mmr = None
         self.ct_mmr = None
         self.rt_lr = None
         self.ct_lr = None
+        self.rt_last_event = datetime.min
+        self.ct_last_event = datetime.min
+        self.rt_events_played = 0
+        self.ct_events_played = 0
         
         if len(sheet_list) > 0:
             self.name = sheet_list[0]
@@ -58,6 +71,34 @@ class Player:
                 raise BadDataGiven()
             else:
                 self.ct_lr = int(sheet_list[5])
+                
+        if len(sheet_list) > 6:
+            if sheet_list[6] is None or sheet_list[6] == "":
+                pass
+            else:
+                self.rt_last_event = sheet_list[6]
+        
+        if len(sheet_list) > 7:
+            if sheet_list[7] is None or sheet_list[7] == "":
+                pass
+            else:
+                self.ct_last_event = sheet_list[7]
+                
+        if len(sheet_list) > 8:
+            if sheet_list[8] is None or sheet_list[8] == "":
+                self.rt_events_played = 0
+            elif not isint(sheet_list[8]):
+                raise BadDataGiven()
+            else:
+                self.rt_events_played = int(sheet_list[8])
+        
+        if len(sheet_list) > 9:
+            if sheet_list[9] is None or sheet_list[9] == "":
+                self.ct_events_played = 0
+            elif not isint(sheet_list[9]):
+                raise BadDataGiven()
+            else:
+                self.ct_events_played = int(sheet_list[9])
                 
     def get_lookup_name(self):
         return get_lookup_name(self.name)

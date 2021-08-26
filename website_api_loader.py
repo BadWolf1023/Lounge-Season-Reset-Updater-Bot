@@ -7,7 +7,7 @@ import CustomExceptions
 import core_data_loader
 import common
 from typing import List
-import discord
+from datetime import datetime
 RT_PLAYER_DATA_API_URL = "https://mariokartboards.com/lounge/api/ladderplayer.php?ladder_id=1&all=1"
 CT_PLAYER_DATA_API_URL = "https://mariokartboards.com/lounge/api/ladderplayer.php?ladder_id=2&all=1"
 RT_MMR_CUTOFF_API_URL = "https://mariokartboards.com/lounge/api/ladderclass.php?ladder_id=1"
@@ -198,6 +198,8 @@ class PlayerDataLoader:
     player_name_json_name = "player_name"
     player_current_mmr_json_name = "current_mmr"
     player_current_lr_json_name = "current_lr"
+    player_last_event_date_json_name = "last_event_date"
+    player_events_played_json_name = "total_events"
     
     @staticmethod
     def player_data_is_corrupt(data):
@@ -208,7 +210,9 @@ class PlayerDataLoader:
             if PlayerDataLoader.player_id_json_name in player_data and isinstance(player_data[PlayerDataLoader.player_id_json_name], str) and common.isint(player_data[PlayerDataLoader.player_id_json_name])\
             and PlayerDataLoader.player_name_json_name in player_data and isinstance(player_data[PlayerDataLoader.player_name_json_name], str) \
             and PlayerDataLoader.player_current_mmr_json_name in player_data and isinstance(player_data[PlayerDataLoader.player_current_mmr_json_name], str) and common.isint(player_data[PlayerDataLoader.player_current_mmr_json_name])\
-            and PlayerDataLoader.player_current_lr_json_name in player_data and isinstance(player_data[PlayerDataLoader.player_current_lr_json_name], str) and common.isint(player_data[PlayerDataLoader.player_current_lr_json_name]):
+            and PlayerDataLoader.player_current_lr_json_name in player_data and isinstance(player_data[PlayerDataLoader.player_current_lr_json_name], str) and common.isint(player_data[PlayerDataLoader.player_current_lr_json_name])\
+            and PlayerDataLoader.player_last_event_date_json_name in player_data and isinstance(player_data[PlayerDataLoader.player_last_event_date_json_name], str)\
+            and PlayerDataLoader.player_events_played_json_name in player_data and isinstance(player_data[PlayerDataLoader.player_events_played_json_name], str) and common.isint(player_data[PlayerDataLoader.player_events_played_json_name]):
                 continue
             print(player_data)
             return True
@@ -220,22 +224,40 @@ class PlayerDataLoader:
         for player in rt_data:
             player_id = player[PlayerDataLoader.player_id_json_name]
             if player_id not in results:
-                results[player_id] = [None, None, None, None, None, None]
+                results[player_id] = [None, None, None, None, None, None, None, None, None, None]
                 
             results[player_id][0] = player[PlayerDataLoader.player_name_json_name]
             results[player_id][1] = None
             results[player_id][2] = player[PlayerDataLoader.player_current_mmr_json_name]
             results[player_id][4] = player[PlayerDataLoader.player_current_lr_json_name]
+            results[player_id][6] = datetime.min
+            results[player_id][8] = player[PlayerDataLoader.player_events_played_json_name]
+            if results[player_id][8] != "0":
+                try:
+                    last_rt_event = player[PlayerDataLoader.player_last_event_date_json_name]
+                    if isinstance(last_rt_event, str):
+                        results[player_id][6] = datetime.strptime(last_rt_event, '%Y-%m-%d %H:%M:%S')
+                except:
+                    print(last_rt_event)
         
         for player in ct_data:
             player_id = player[PlayerDataLoader.player_id_json_name]
             if player_id not in results:
-                results[player_id] = [None, None, None, None, None, None]
+                results[player_id] = [None, None, None, None, None, None, None, None, None, None]
                 
             results[player_id][0] = player[PlayerDataLoader.player_name_json_name]
             results[player_id][1] = None
             results[player_id][3] = player[PlayerDataLoader.player_current_mmr_json_name]
             results[player_id][5] = player[PlayerDataLoader.player_current_lr_json_name]
+            results[player_id][7] = datetime.min
+            results[player_id][9] = player[PlayerDataLoader.player_events_played_json_name]
+            if results[player_id][9] != "0":
+                try:
+                    last_ct_event = player[PlayerDataLoader.player_last_event_date_json_name]
+                    if isinstance(last_ct_event, str):
+                        results[player_id][7] = datetime.strptime(last_ct_event, '%Y-%m-%d %H:%M:%S')
+                except:
+                    print(last_ct_event)
             
         return list(results.values())
 
