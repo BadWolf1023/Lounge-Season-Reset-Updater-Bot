@@ -5,12 +5,19 @@ Created on Aug 21, 2021
 '''
 
 import aiohttp
+from typing import List, Tuple
+import os
+from pathlib import Path
+import discord
+
+
 TESTING_SERVER_ID = 739733336871665696
 BAD_WOLF_ID = 706120725882470460
 TESTING=True
 MKW_LOUNGE_GUILD_ID = 387347467332485122
 DISCORD_MAX_MESSAGE_LEN = 2000
 SERVER_ID_TO_IMPERSONATE = None
+
 
 
 #These are the cutoffs. If a player has less than or equal to the first number tuple, they will receive this role
@@ -26,6 +33,8 @@ RT_CLASS_ROLE_CUTOFFS = []
 
 CT_CLASS_ROLE_CUTOFFS = []
 
+test_cutoffs = []
+
 #For players to get an updated RT Ranking role, they must have one of these role IDs first
 RT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE = set()
 #For players to get an updated CT Ranking role, they must have one of these role IDs first
@@ -40,7 +49,45 @@ all_player_data = {}
 #List will contain 2 items, rt role id in first index, ct role id in 2nd index
 top_role_ids = []
 
-
+async def safe_send_missing_permissions(ctx, delete_after=None):
+    try:
+        await ctx.reply("I'm missing permissions. Contact your admins. The bot needs the following permissions:\n- Send Messages\n- Attach files", delete_after=delete_after)
+    except discord.errors.Forbidden: #We can't send messages
+        pass
+    
+async def safe_send_file(ctx, content):
+    file_name = str(ctx.message.id) + ".txt"
+    Path('./attachments').mkdir(parents=True, exist_ok=True)
+    file_path = "./attachments/" + file_name
+    with open(file_path, "w") as f:
+        f.write(content)
+        
+    txt_file = discord.File(file_path, filename=file_name)
+    try:
+        await ctx.reply(file=txt_file)
+    except discord.errors.Forbidden:
+        safe_send_missing_permissions(ctx)
+    finally:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+            
+#Assumes cutoff data is already sorted
+def cutoff_display_text(cutoff_data:List[Tuple[int, str, int]]):
+    to_return = []
+    
+    last_mmr = None
+    for index, (min_mmr, class_name, _) in enumerate(cutoff_data):
+        if index == 0:
+            to_return.append(f"{class_name} —> {'-Infinity' if min_mmr is None else min_mmr}+ MMR")
+        else:
+            if min_mmr is None:
+                to_return.append(f"{class_name} —> <{last_mmr} MMR")
+            else:
+                to_return.append(f"{class_name} —> {min_mmr} - {last_mmr-1} MMR")
+        last_mmr = min_mmr
+    return "\n".join(reversed(to_return))
+    
+    
 def is_lounge(ctx):
     if isinstance(ctx, str):
         return str(MKW_LOUNGE_GUILD_ID) == ctx or (str(TESTING_SERVER_ID) == ctx if TESTING else False)

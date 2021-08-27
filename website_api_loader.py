@@ -22,8 +22,8 @@ class CutoffDataLoader:
     order_json_name = "ladder_order"
     lr_role_json_name = "ladder_boundary_name"
     mmr_role_json_name = "ladder_class_name"
-    upper_lr_cutoff_json_name = "maximum_lr"
-    upper_mmr_cutoff_json_name = "maximum_mmr"
+    lower_lr_cutoff_json_name = "minimum_lr"
+    lower_mmr_cutoff_json_name = "minimum_mmr"
     
     
     
@@ -36,7 +36,7 @@ class CutoffDataLoader:
         for cutoff_piece in data["results"]:
             if CutoffDataLoader.order_json_name in cutoff_piece and isinstance(cutoff_piece[CutoffDataLoader.order_json_name], str) and common.isint(cutoff_piece[CutoffDataLoader.order_json_name])\
             and CutoffDataLoader.lr_role_json_name in cutoff_piece and isinstance(cutoff_piece[CutoffDataLoader.lr_role_json_name], str) \
-            and CutoffDataLoader.upper_lr_cutoff_json_name in cutoff_piece and ((isinstance(cutoff_piece[CutoffDataLoader.upper_lr_cutoff_json_name], str) and common.isint(cutoff_piece[CutoffDataLoader.upper_lr_cutoff_json_name]) or cutoff_piece[CutoffDataLoader.upper_lr_cutoff_json_name] is None)):
+            and CutoffDataLoader.lower_lr_cutoff_json_name in cutoff_piece and ((isinstance(cutoff_piece[CutoffDataLoader.lower_lr_cutoff_json_name], str) and common.isint(cutoff_piece[CutoffDataLoader.lower_lr_cutoff_json_name]) or cutoff_piece[CutoffDataLoader.lower_lr_cutoff_json_name] is None)):
                 continue
             print(cutoff_piece)
             return True
@@ -49,7 +49,7 @@ class CutoffDataLoader:
         for cutoff_piece in data["results"]:
             if CutoffDataLoader.order_json_name in cutoff_piece and isinstance(cutoff_piece[CutoffDataLoader.order_json_name], str) and common.isint(cutoff_piece[CutoffDataLoader.order_json_name])\
             and CutoffDataLoader.mmr_role_json_name in cutoff_piece and isinstance(cutoff_piece[CutoffDataLoader.mmr_role_json_name], str) \
-            and CutoffDataLoader.upper_mmr_cutoff_json_name in cutoff_piece and ((isinstance(cutoff_piece[CutoffDataLoader.upper_mmr_cutoff_json_name], str) and common.isint(cutoff_piece[CutoffDataLoader.upper_mmr_cutoff_json_name]) or cutoff_piece[CutoffDataLoader.upper_mmr_cutoff_json_name] is None)):
+            and CutoffDataLoader.lower_mmr_cutoff_json_name in cutoff_piece and ((isinstance(cutoff_piece[CutoffDataLoader.lower_mmr_cutoff_json_name], str) and common.isint(cutoff_piece[CutoffDataLoader.lower_mmr_cutoff_json_name]) or cutoff_piece[CutoffDataLoader.lower_mmr_cutoff_json_name] is None)):
                 continue
             print(cutoff_piece)
             return True
@@ -65,15 +65,15 @@ class CutoffDataLoader:
             else:
                 cutoff_data_piece[CutoffDataLoader.mmr_role_json_name] = to_append + cutoff_data_piece[CutoffDataLoader.mmr_role_json_name]
                 
-            if CutoffDataLoader.upper_lr_cutoff_json_name in cutoff_data_piece and cutoff_data_piece[CutoffDataLoader.upper_lr_cutoff_json_name] is not None:
-                cutoff_data_piece[CutoffDataLoader.upper_lr_cutoff_json_name] = int(cutoff_data_piece[CutoffDataLoader.upper_lr_cutoff_json_name])
-            elif CutoffDataLoader.upper_mmr_cutoff_json_name in cutoff_data_piece and cutoff_data_piece[CutoffDataLoader.upper_mmr_cutoff_json_name] is not None:
-                cutoff_data_piece[CutoffDataLoader.upper_mmr_cutoff_json_name] = int(cutoff_data_piece[CutoffDataLoader.upper_mmr_cutoff_json_name])
-        cutoff_data.sort(key=lambda data_piece: data_piece[CutoffDataLoader.order_json_name])
+            if CutoffDataLoader.lower_lr_cutoff_json_name in cutoff_data_piece and cutoff_data_piece[CutoffDataLoader.lower_lr_cutoff_json_name] is not None:
+                cutoff_data_piece[CutoffDataLoader.lower_lr_cutoff_json_name] = int(cutoff_data_piece[CutoffDataLoader.lower_lr_cutoff_json_name])
+            elif CutoffDataLoader.lower_mmr_cutoff_json_name in cutoff_data_piece and cutoff_data_piece[CutoffDataLoader.lower_mmr_cutoff_json_name] is not None:
+                cutoff_data_piece[CutoffDataLoader.lower_mmr_cutoff_json_name] = int(cutoff_data_piece[CutoffDataLoader.lower_mmr_cutoff_json_name])
+        cutoff_data.sort(key=lambda data_piece: data_piece[CutoffDataLoader.order_json_name], reverse=True)
                 
     
     @staticmethod 
-    async def __update_common_cutoffs__(rt_mmr_cutoff_data, ct_mmr_cutoff_data, rt_lr_cutoff_data, ct_lr_cutoff_data, message_sender, verbose=False):
+    async def __update_common_cutoffs__(rt_mmr_cutoff_data, ct_mmr_cutoff_data, rt_lr_cutoff_data, ct_lr_cutoff_data, message_sender, verbose=False, alternative_ctx=None):
         await CutoffDataLoader.__fix_cutoff_data__(rt_mmr_cutoff_data, is_rt=True)
         await CutoffDataLoader.__fix_cutoff_data__(ct_mmr_cutoff_data, is_rt=False)
         await CutoffDataLoader.__fix_cutoff_data__(rt_lr_cutoff_data, is_rt=True)
@@ -93,9 +93,9 @@ class CutoffDataLoader:
                     break
             else:
                 error_message = f"No role found in the server named {role_name}"
-                await message_sender.queue_message(error_message)
+                await message_sender.queue_message(error_message, alternative_ctx)
                 raise CustomExceptions.NoRoleFound(error_message)
-            temp_rt_class_role_cutoffs.append((data_piece[CutoffDataLoader.upper_mmr_cutoff_json_name], role_name, role_id))
+            temp_rt_class_role_cutoffs.append((data_piece[CutoffDataLoader.lower_mmr_cutoff_json_name], role_name, role_id))
         
         #CT Class role finding and loading
         temp_ct_class_role_cutoffs = []
@@ -109,9 +109,9 @@ class CutoffDataLoader:
                     break
             else:
                 error_message = f"No role found in the server named {role_name}"
-                await message_sender.queue_message(error_message)
+                await message_sender.queue_message(error_message, alternative_ctx)
                 raise CustomExceptions.NoRoleFound(error_message)
-            temp_ct_class_role_cutoffs.append((data_piece[CutoffDataLoader.upper_mmr_cutoff_json_name], role_name, role_id))
+            temp_ct_class_role_cutoffs.append((data_piece[CutoffDataLoader.lower_mmr_cutoff_json_name], role_name, role_id))
             
         #RT Ranking role finding and loading
         temp_rt_rank_role_cutoffs = []
@@ -125,9 +125,9 @@ class CutoffDataLoader:
                     break
             else:
                 error_message = f"No role found in the server named {role_name}"
-                await message_sender.queue_message(error_message)
+                await message_sender.queue_message(error_message, alternative_ctx)
                 raise CustomExceptions.NoRoleFound(error_message)
-            temp_rt_rank_role_cutoffs.append((data_piece[CutoffDataLoader.upper_lr_cutoff_json_name], role_name, role_id))
+            temp_rt_rank_role_cutoffs.append((data_piece[CutoffDataLoader.lower_lr_cutoff_json_name], role_name, role_id))
         
         #CT Ranking role finding and loading
         temp_ct_rank_role_cutoffs = []
@@ -141,9 +141,9 @@ class CutoffDataLoader:
                     break
             else:
                 error_message = f"No role found in the server named {role_name}"
-                await message_sender.queue_message(error_message)
+                await message_sender.queue_message(error_message, alternative_ctx)
                 raise CustomExceptions.NoRoleFound(error_message)
-            temp_ct_rank_role_cutoffs.append((data_piece[CutoffDataLoader.upper_lr_cutoff_json_name], role_name, role_id))
+            temp_ct_rank_role_cutoffs.append((data_piece[CutoffDataLoader.lower_lr_cutoff_json_name], role_name, role_id))
             
 
         common.RT_CLASS_ROLE_CUTOFFS.clear()
@@ -171,26 +171,26 @@ class CutoffDataLoader:
     
     
     @staticmethod 
-    async def update_cutoff_data(message_sender, verbose=False):
+    async def update_cutoff_data(message_sender, verbose=False, alternative_ctx=None):
         rt_mmr_cutoff_data = await common.getJSONData(RT_MMR_CUTOFF_API_URL)
         ct_mmr_cutoff_data = await common.getJSONData(CT_MMR_CUTOFF_API_URL)
         rt_lr_cutoff_data = await common.getJSONData(RT_LR_CUTOFF_API_URL)
         ct_lr_cutoff_data = await common.getJSONData(CT_LR_CUTOFF_API_URL)
         
         if CutoffDataLoader.__mmr_cutoff_data_is_corrupt__(rt_mmr_cutoff_data):
-            await message_sender.queue_message("RT MMR Cutoff Data was corrupt.")
+            await message_sender.queue_message("RT MMR Cutoff Data was corrupt.", alternative_ctx)
             raise CustomExceptions.CutoffAPIBadData("RT MMR Cutoff Data was corrupt.")
         if CutoffDataLoader.__mmr_cutoff_data_is_corrupt__(ct_mmr_cutoff_data):
-            await message_sender.queue_message("CT MMR Cutoff Data was corrupt.")
+            await message_sender.queue_message("CT MMR Cutoff Data was corrupt.", alternative_ctx)
             raise CustomExceptions.CutoffAPIBadData("CT MMR Cutoff Data was corrupt.")
         if CutoffDataLoader.__lr_cutoff_data_is_corrupt__(rt_lr_cutoff_data):
-            await message_sender.queue_message("RT LR Cutoff Data was corrupt.")
+            await message_sender.queue_message("RT LR Cutoff Data was corrupt.", alternative_ctx)
             raise CustomExceptions.CutoffAPIBadData("RT LR Cutoff Data was corrupt.")
         if CutoffDataLoader.__lr_cutoff_data_is_corrupt__(ct_lr_cutoff_data):
-            await message_sender.queue_message("CT LR Cutoff Data was corrupt.")
+            await message_sender.queue_message("CT LR Cutoff Data was corrupt.", alternative_ctx)
             raise CustomExceptions.CutoffAPIBadData("CT LR Cutoff Data was corrupt.")
         
-        return await CutoffDataLoader.__update_common_cutoffs__(rt_mmr_cutoff_data["results"], ct_mmr_cutoff_data["results"], rt_lr_cutoff_data["results"], ct_lr_cutoff_data["results"], message_sender, verbose)
+        return await CutoffDataLoader.__update_common_cutoffs__(rt_mmr_cutoff_data["results"], ct_mmr_cutoff_data["results"], rt_lr_cutoff_data["results"], ct_lr_cutoff_data["results"], message_sender, verbose, alternative_ctx)
 
 
 class PlayerDataLoader:
@@ -262,21 +262,21 @@ class PlayerDataLoader:
         return list(results.values())
 
     @staticmethod 
-    async def get_player_data(message_sender, verbose=False):
+    async def get_player_data(message_sender, verbose=False, alternative_ctx=None):
         rt_data = await common.getJSONData(RT_PLAYER_DATA_API_URL)
         ct_data = await common.getJSONData(CT_PLAYER_DATA_API_URL)
         
         if PlayerDataLoader.player_data_is_corrupt(rt_data):
-            await message_sender.queue_message("RT Data was corrupt.")
+            await message_sender.queue_message("RT Data was corrupt.", alternative_ctx)
             raise CustomExceptions.PlayerDataAPIBadData("RT Data was corrupt.")
         if PlayerDataLoader.player_data_is_corrupt(ct_data):
             await message_sender.queue_message("CT Data was corrupt.")
-            raise CustomExceptions.PlayerDataAPIBadData("CT Data was corrupt.")
+            raise CustomExceptions.PlayerDataAPIBadData("CT Data was corrupt.", alternative_ctx)
         
         return await PlayerDataLoader.merge_data(rt_data["results"], ct_data["results"])
         
     @staticmethod
-    async def update_player_data(message_sender, verbose=False):
-        to_load = await PlayerDataLoader.get_player_data(message_sender, verbose)
-        await core_data_loader.read_player_data_in(message_sender, to_load, verbose)
+    async def update_player_data(message_sender, verbose=False, alternative_ctx=None):
+        to_load = await PlayerDataLoader.get_player_data(message_sender, verbose, alternative_ctx)
+        await core_data_loader.read_player_data_in(message_sender, to_load, verbose, alternative_ctx)
     

@@ -13,6 +13,7 @@ from ExtraChecks import owner_or_staff, lounge_only_check, badwolf_command_check
 import CustomExceptions
 from datetime import datetime, timedelta
 import queue
+import asyncio
 invite_link = "https://discord.com/api/oauth2/authorize?client_id=872936275320139786&permissions=268470272&scope=bot"
 lounge_server_id = 387347467332485122
 running_channel_id = 879957305007943710
@@ -58,7 +59,7 @@ class MessageSender(object):
     def __temp_role_history_check__(self):
         to_delete = set()
         current_time = datetime.now()
-        for message, time_sent in self.temp_role_message_history:
+        for message, time_sent in self.temp_role_message_history.values():
             if (current_time - time_sent) > MessageSender.TIME_BETWEEN_TEMPROLE_NOTIFICATIONS:
                 to_delete.add(message)
                 
@@ -70,7 +71,11 @@ class MessageSender(object):
                 self.message_queue.put("Let Bad Wolf know there was an error and to check the bot.\n")
                 pass
                 
-    async def queue_message(self, message_text, is_temp_role_message=False):
+    async def queue_message(self, message_text, is_temp_role_message=False, alternative_ctx=None):
+        if alternative_ctx is not None:
+            await alternative_ctx.send(message_text)
+            return 
+        
         if not is_temp_role_message:
             self.message_queue.put(message_text + "\n")
         else:
@@ -128,15 +133,16 @@ def has_any_role_id(member:discord.Member, role_ids):
 
 def determine_new_role(player_rating, cutoff_data):
     for cutoff in cutoff_data:
-        if cutoff[0] is None or player_rating <= cutoff[0]:
+        if cutoff[0] is None or player_rating >= cutoff[0]:
             return cutoff[2]
     return None
 
+
 def determine_role_name(player_rating, cutoff_data):
     for cutoff in cutoff_data:
-        if cutoff[0] is None or player_rating <= cutoff[0]:
+        if cutoff[0] is None or player_rating >= cutoff[0]:
             return cutoff[1]
-    return None
+    return "No Class (didn't fall into any of the cutoff ranges)"
 
 def get_roles_to_remove(member, guild, role_ids_to_remove):
     roles_to_remove = []
@@ -247,33 +253,50 @@ async def __update_roles__(message_sender, guild:discord.Guild, rating_func, pre
                 
         
 
-async def update_roles(message_sender, guild, verbose=True, modify_roles=True):
+async def update_roles(message_sender, guild, verbose=True, modify_roles=True, only_rt=None):
     if verbose:
         await message_sender.queue_message(f"Lounge server has {len(guild.members)} members.")
+    do_ct = only_rt is False or only_rt is None
+    do_rt = only_rt is True or only_rt is None
     
-    if verbose:
-        await message_sender.queue_message("--------------- Updating RT Class Roles ---------------")
-    rt_class_rating_func = lambda p: p.rt_mmr
-    await __update_roles__(message_sender, guild, rt_class_rating_func, common.RT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE, common.RT_CLASS_ROLE_CUTOFFS, True, track_type="RT", role_type="Class", verbose_output=verbose, modify_roles=modify_roles)
+    if do_rt:
+        if verbose:
+            await message_sender.queue_message("--------------- Updating RT Class Roles ---------------")
+        rt_class_rating_func = lambda p: p.rt_mmr
+        rt_cutoff_to_use = common.RT_CLASS_ROLE_CUTOFFS if len(common.test_cutoffs) == 0 else common.test_cutoffs
+        await __update_roles__(message_sender, guild, rt_class_rating_func, common.RT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE, rt_cutoff_to_use, True, track_type="RT", role_type="Class", verbose_output=verbose, modify_roles=modify_roles)
+        
+        if verbose:
+            await message_sender.queue_message("--------------- Updating RT Ranking Roles ---------------")
+        rt_role_rating_func = lambda p: p.rt_lr
+        await __update_roles__(message_sender, guild, rt_role_rating_func, common.RT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE, common.RT_RANKING_ROLE_CUTOFFS, True, track_type="RT", role_type="Ranking", verbose_output=verbose, modify_roles=modify_roles)
     
-    if verbose:
-        await message_sender.queue_message("--------------- Updating CT Class Roles ---------------")
-    ct_class_rating_func = lambda p: p.ct_mmr
-    await __update_roles__(message_sender, guild, ct_class_rating_func, common.CT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE, common.CT_CLASS_ROLE_CUTOFFS, True, track_type="CT", role_type="Class", verbose_output=verbose, modify_roles=modify_roles)
+    if do_ct:
+        if verbose:
+            await message_sender.queue_message("--------------- Updating CT Class Roles ---------------")
+        ct_class_rating_func = lambda p: p.ct_mmr
+        ct_cutoff_to_use = common.CT_CLASS_ROLE_CUTOFFS if len(common.test_cutoffs) == 0 else common.test_cutoffs
+        await __update_roles__(message_sender, guild, ct_class_rating_func, common.CT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE, ct_cutoff_to_use, True, track_type="CT", role_type="Class", verbose_output=verbose, modify_roles=modify_roles)
+        
     
-    if verbose:
-        await message_sender.queue_message("--------------- Updating RT Ranking Roles ---------------")
-    rt_role_rating_func = lambda p: p.rt_lr
-    await __update_roles__(message_sender, guild, rt_role_rating_func, common.RT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE, common.RT_RANKING_ROLE_CUTOFFS, True, track_type="RT", role_type="Ranking", verbose_output=verbose, modify_roles=modify_roles)
+        if verbose:
+            await message_sender.queue_message("--------------- Updating CT Ranking Roles ---------------")
+        ct_role_rating_func = lambda p: p.ct_lr
+        await __update_roles__(message_sender, guild, ct_role_rating_func, common.CT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE, common.CT_RANKING_ROLE_CUTOFFS, True, track_type="CT", role_type="Ranking", verbose_output=verbose, modify_roles=modify_roles)
+        
+
+async def pull_data(message_sender, verbose=True, alternative_ctx=None):
+    if USING_SHEET:
+        pass
+        #google_sheet_loader.update_player_data() 
+    else:
+        await website_api_loader.PlayerDataLoader.update_player_data(message_sender, verbose, alternative_ctx)
+
+    if USING_WEBSITE_FOR_CUTOFFS:
+        if len(common.test_cutoffs) == 0: #No hypothetical cutoffs are being used, so pull data
+            await website_api_loader.CutoffDataLoader.update_cutoff_data(message_sender, verbose, alternative_ctx)   
     
-    if verbose:
-        await message_sender.queue_message("--------------- Updating CT Ranking Roles ---------------")
-    ct_role_rating_func = lambda p: p.ct_lr
-    await __update_roles__(message_sender, guild, ct_role_rating_func, common.CT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE, common.CT_RANKING_ROLE_CUTOFFS, True, track_type="CT", role_type="Ranking", verbose_output=verbose, modify_roles=modify_roles)
-    
-    
-    
-async def main(message_sender:MessageSender, verbose=True, modify_roles=True):
+async def main(message_sender:MessageSender, verbose=True, modify_roles=True, only_rt=None):
     lounge_server = bot.get_guild(lounge_server_id)
     if lounge_server is None:
         print("I'm not in the Lounge server.")
@@ -292,23 +315,66 @@ Updating roles started.""")
         return
     
     
-    if USING_SHEET:
-        pass
-        #google_sheet_loader.update_player_data() 
-    else:
-        await website_api_loader.PlayerDataLoader.update_player_data(message_sender, verbose)
-
-    if USING_WEBSITE_FOR_CUTOFFS:
-        await website_api_loader.CutoffDataLoader.update_cutoff_data(message_sender, verbose)
+    await pull_data(message_sender, verbose)
     
-    await update_roles(message_sender, lounge_server, verbose, modify_roles)
+    await update_roles(message_sender, lounge_server, verbose, modify_roles, only_rt)
     
     if verbose:
         if not modify_roles:
             await message_sender.queue_message("Testing ended.")
         else:
             await message_sender.queue_message("Finished updating roles.")
+
+async def send_file_with_players_in_each_class(ctx, is_rt, last_x_days=None):
+    current_est_time = datetime.now() + timedelta(hours=HOURS_TO_ADD_TO_MAKE_EST)
+    need_to_have_played_after_date = None if last_x_days is None else (current_est_time - timedelta(days=last_x_days))
+    get_mmr_and_date = None
+    if is_rt:
+        get_mmr_and_date = lambda x: (x.rt_mmr, x.rt_last_event)
+    else:
+        get_mmr_and_date = lambda y: (y.ct_mmr, y.ct_last_event)
     
+    cutoffs = common.RT_CLASS_ROLE_CUTOFFS if is_rt else common.CT_CLASS_ROLE_CUTOFFS
+    if len(common.test_cutoffs) > 0:
+        cutoffs = common.test_cutoffs
+        
+    activity_reqs = {}
+    for cutoff_data in reversed(cutoffs):
+        activity_reqs[cutoff_data[1]] = [[], []] #active players, total players
+    
+    for player_data in common.all_player_data.values():
+        mmr, last_event_date = get_mmr_and_date(player_data)
+        if mmr is None: #They haven't ever played this track type (RT or CT), so don't count them - skip
+            continue
+        
+        class_name_for_player = determine_role_name(mmr, cutoffs)
+        activity_reqs[class_name_for_player][1].append(player_data.name)
+        if need_to_have_played_after_date is None or last_event_date >= need_to_have_played_after_date:
+            activity_reqs[class_name_for_player][0].append(player_data.name)
+               
+            
+    to_send = f"Active players in each {'RT' if is_rt else 'CT'} class during the last {last_x_days} days.\nNote: Active is defined as players who have played at least 1 event in the past {last_x_days} days, as you specified.\nNote: Total players is the total players in the class, regardless of whether they have played an event this season."
+    if need_to_have_played_after_date is None:
+        to_send = f"Players in each {'RT' if is_rt else 'CT'} class.\nNote: All players are included, regardless of whether they have played an event this season."
+    
+    if need_to_have_played_after_date is not None:
+        to_send += f"\n"
+        for cutoff_name, (active_player_list, all_player_list) in reversed(activity_reqs.items()):
+            percentage_active = 0.0
+            if len(all_player_list) > 0:
+                percentage_active = len(active_player_list) / len(all_player_list)
+            percentage_active = int(round(100 * percentage_active, 0))
+            
+            to_send += f"\n{cutoff_name}"
+            if need_to_have_played_after_date is not None:
+                to_send += f": {len(active_player_list)} active players out of the {len(all_player_list)} players who are in this class ({percentage_active}%)"
+    
+    for cutoff_name, (active_player_list, all_player_list) in reversed(activity_reqs.items()):
+        active_player_list.sort(key=lambda x:x.lower())
+        to_send += f"\n\n\n{cutoff_name}\n"
+        to_send += "\n".join(active_player_list)
+    
+    await common.safe_send_file(ctx, to_send)
     
 async def send_active_players(ctx, is_rt, last_x_days):
     current_est_time = datetime.now() + timedelta(hours=HOURS_TO_ADD_TO_MAKE_EST)
@@ -320,8 +386,10 @@ async def send_active_players(ctx, is_rt, last_x_days):
         get_mmr_and_date = lambda y: (y.ct_mmr, y.ct_last_event)
     
     cutoffs = common.RT_CLASS_ROLE_CUTOFFS if is_rt else common.CT_CLASS_ROLE_CUTOFFS
+    if len(common.test_cutoffs) > 0:
+        cutoffs = common.test_cutoffs
     activity_reqs = {}
-    for cutoff_data in cutoffs:
+    for cutoff_data in reversed(cutoffs):
         activity_reqs[cutoff_data[1]] = [0, 0] #active players, total players
     
     for player_data in common.all_player_data.values():
@@ -340,7 +408,7 @@ async def send_active_players(ctx, is_rt, last_x_days):
         percentage_active = 0.0
         if total_players > 0:
             percentage_active = active_players / total_players
-        percentage_active = round(100 * percentage_active, 3)
+        percentage_active = int(round(100 * percentage_active, 0))
         
         
         to_send += f"\n{cutoff_name}: {active_players} active players out of {total_players} total players ({percentage_active}%)"
@@ -468,18 +536,7 @@ class RoleUpdater(commands.Cog):
         self.message_sender.history_checker_clearing.start()
         
 
-    @commands.command()
-    @commands.guild_only()
-    @lounge_only_check()
-    @commands.max_concurrency(number=1,wait=True)
-    @owner_or_staff()
-    async def resume(self, ctx):
-        """This command resumes the bot keeping everyone's role up to date, which runs every 120 seconds."""
-        if self.__role_updating_task__.is_running():
-            await ctx.send(f"The bot is already running role updating every {LOOP_TIME} seconds. If you want to stop it, do `!stop`")
-        else:
-            self.first_run = True
-            self.__role_updating_task__.start()
+
             
     @commands.command()
     @commands.guild_only()
@@ -516,38 +573,145 @@ class RoleUpdater(commands.Cog):
     @lounge_only_check()
     @commands.max_concurrency(number=1,wait=True)
     @owner_or_staff()
-    async def activeplayers(self, ctx, rt_or_ct:str, number_of_days:int):
+    async def activeplayers(self, ctx:commands.Context, rt_or_ct:str, number_of_days:int):
         """This command shows the number of active players in each class. You can specify the number of activity time limit. If you're unsure, 5 days is a good activity time limit."""
-        if not self.__role_updating_task__.is_running():
-            await ctx.send(f"The bot needs to be updating roles in the background for this command to work. If you want to start updating roles in the background, do `!resume`")
+        
+        if number_of_days < 1 or number_of_days > 365:
+            await ctx.send(f'"{number_of_days}" is not a valid option. Valid options are between 1 days and 365 days.')
+            return
+        is_rt = None
+        if rt_or_ct.lower() == "rt":
+            is_rt = True
+        elif rt_or_ct.lower() == "ct":
+            is_rt = False
         else:
+            await ctx.send(f'"{rt_or_ct}" is not a valid option. Valid options are: RT or CT')
+            return
+        
+        if not self.__role_updating_task__.is_running():
+            to_delete = await ctx.send("Pulling player data...")
+            try:
+                await pull_data(self.message_sender, False, ctx) #pulls player data, and if no test cutoff data, pulls that too
+            finally:
+                await to_delete.delete()
+            
+        await send_active_players(ctx, is_rt, number_of_days)
+        
+    @commands.command()
+    @commands.guild_only()
+    @lounge_only_check()
+    @commands.max_concurrency(number=1,wait=True)
+    @owner_or_staff()
+    async def inclass(self, ctx:commands.Context, rt_or_ct:str, number_of_days:int=None):
+        """This command sends a list of players in each class. You can also specify an activity criteria.
+        
+        IMPORTANT NOTE: If you do not specify an activity requirement, all players are included, regardless of whether they have played an event this season. If you did specify an activity requirement, the total number of players statistic is the total number of players in that class, regardless of whether they played an event this season or not. If you're only interested in the activity among people who have played at least 1 event this season, you should check out !activeplayers
+        
+        Examples:
+        - To send a list of players in each RT class: !inclass rt
+        - To send a list of players in each CT class who have been active in the past 5 days: !inclass ct 5"""
+        if number_of_days is not None:
             if number_of_days < 1 or number_of_days > 365:
-                await ctx.send(f'"{number_of_days}" is not a valid option. Valid options are between 1 days and 365 days.')
+                await ctx.send(f'"{number_of_days}" is not a valid option. Valid options are between 1 days and 365 days. If you don\'t want to filter by activity, don\'t specify a number of days.')
                 return
-            is_rt = None
-            if rt_or_ct.lower() == "rt":
-                is_rt = True
-            elif rt_or_ct.lower() == "ct":
-                is_rt = False
+        is_rt = None
+        if rt_or_ct.lower() == "rt":
+            is_rt = True
+        elif rt_or_ct.lower() == "ct":
+            is_rt = False
+        else:
+            await ctx.send(f'"{rt_or_ct}" is not a valid option. Valid options are: RT or CT')
+            return
+        
+        if not self.__role_updating_task__.is_running():
+            to_delete = await ctx.send("Pulling player data...")
+            try:
+                await pull_data(self.message_sender, False, ctx) #pulls player data, and if no test cutoff data, pulls that too
+            finally:
+                await to_delete.delete()
+            
+        await send_file_with_players_in_each_class(ctx, is_rt, number_of_days)
+    
+    
+    @commands.command()
+    @commands.guild_only()
+    @lounge_only_check()
+    @commands.max_concurrency(number=1,wait=True)
+    @owner_or_staff()
+    async def testcutoffs(self, ctx:commands.Context):
+        """This command sets test cutoffs, which can then be used by the !activeplayers, !hypotheticalroles, and !inclass commands to see the effect a proposed cutoff may have.
+        
+        The syntax of the command is !testcutoffs ClassName, LowerCutoff, ClassName, LowerCutoff, ...
+        If you want your lower cutoff to be Negative Infinity, do -Infinity
+        
+        For example, !testcutoffs Class F, -Infinity, Class E, 1500, Class D, 4000, Class C, 8000"""
+        
+        testcutoff_error_message = """The syntax of the command is `!testcutoffs ClassName, LowerCutoff, ClassName, LowerCutoff, ...`
+If you want your lower cutoff to be Negative Infinity, do -Infinity
+        
+For example, `!testcutoffs Class F, -Infinity, Class E, 1500, Class D, 4000, Class C, 8000`"""
+        
+        if self.__role_updating_task__.is_running():
+            await ctx.send(f"The bot is running role updating every {LOOP_TIME} seconds, which will override and test cutoffs you set. You should first do `!stop` and then use the `!testcutoffs` command.")
+            return
+        
+        args = ctx.message.content.split(",")
+        args[0] = args[0][len("!testcutoffs"):]
+        LOWEST_CUTOFF = -99999999
+        if len(args) < 2:
+            await ctx.send(testcutoff_error_message)
+            return
+        
+        allowed_negative_infinity_terms = ["-infinity", "negativeinfinity"]
+        
+        new_cutoffs = []
+        cur_class_data = []
+        for ind, item in enumerate(args):
+            if ind % 2 == 0: #It's a Class name, new class
+                cur_class_data = []
+                cur_class_data.append(item.strip())
             else:
-                await ctx.send(f'"{rt_or_ct}" is not a valid option. Valid options are: RT or CT')
-                return
+                lower_cutoff = None
+                temp = item.lower().replace(" ", "")
+                if common.isint(temp):
+                    lower_cutoff = int(temp)
+                    if lower_cutoff < LOWEST_CUTOFF:
+                        await ctx.send(f'"{lower_cutoff}" is below the minimum number allowed: {LOWEST_CUTOFF}\n\nIf you want to do negative infinity, do "-infinity" for your cutoff number.')
+                        return
+                elif temp in allowed_negative_infinity_terms:
+                    lower_cutoff = None
+                else:
+                    await ctx.send(f'"{item}" is not a valid number for the lower cutoff for class named {cur_class_data[0]}\n\n{testcutoff_error_message}')
+                    return
+                
+                cur_class_data.insert(0, lower_cutoff)
+                cur_class_data.append(0)
+                new_cutoffs.append((cur_class_data[0], cur_class_data[1], cur_class_data[2]))
+        
+        new_cutoffs.sort(key=lambda cutoff_data: LOWEST_CUTOFF if cutoff_data[0] is None else cutoff_data[0], reverse=True)
+        common.test_cutoffs.clear()
+        common.test_cutoffs.extend(new_cutoffs)
+        await ctx.send("Test cutoffs:\n" + common.cutoff_display_text(common.test_cutoffs) + "\n\nYou can now use `!activeplayers` or `!hypotheticalroles` or `!inclass` to see how the proposed cutoffs will change things.")
+        
             
-            await send_active_players(ctx, is_rt, number_of_days)
-            
+        
+        
+        
             
     @commands.command()
     @commands.guild_only()
     @lounge_only_check()
     @commands.max_concurrency(number=1,wait=True)
     @badwolf_command_check()
-    async def resume_suppress(self, ctx): #suppress
-        """This command resumes the bot keeping everyone's role up to date, which runs every 120 seconds, but spresses the first run's verbose output."""
+    async def resume(self, ctx): #suppress
+        """This command resumes the bot keeping everyone's role up to date, which runs every 120 seconds."""
         if self.__role_updating_task__.is_running():
             await ctx.send(f"The bot is already running role updating every {LOOP_TIME} seconds. If you want to stop it, do `!stop`")
         else:
             self.first_run = False
             self.__role_updating_task__.start()
+            await ctx.send("Resumed.")
+            
             
     @commands.command()
     @commands.guild_only()
@@ -580,15 +744,31 @@ class RoleUpdater(commands.Cog):
     @lounge_only_check()
     @commands.max_concurrency(number=1,wait=True)
     @owner_or_staff()
-    async def hypotheticalroles(self, ctx):
-        """This command simply displays the roles each person were to receive and lose. It does not change anyone's roles."""
-        if self.__role_updating_task__.is_running():
-            await ctx.send(f"The bot is already running role updating every {LOOP_TIME} seconds. If you want to stop it and view the role's people would hypothetically lose and receive, do `!stop` and then `!hypotheticalroles`.")
+    async def hypotheticalroles(self, ctx, rt_or_ct:str):
+        """This command simply displays the roles each person were to receive and lose. It does not change anyone's roles. Before doing this command, you should !stop and then !testcutoffs to setup your test scenario."""
+    
+        is_rt = None
+        if rt_or_ct.lower() == "rt":
+            is_rt = True
+        elif rt_or_ct.lower() == "ct":
+            is_rt = False
         else:
-            await main(self.message_sender, verbose=True, modify_roles=False)
+            await ctx.send(f'"{rt_or_ct}" is not a valid option. Valid options are: RT or CT')
+            return
+    
+        if self.__role_updating_task__.is_running():
+            await ctx.send(f"The bot is already running role updating every {LOOP_TIME} seconds. If you want to stop it to set test cutoffs and view the role's people would hypothetically lose and receive, do `!stop` and then `!testcutoffs` and then `!hypotheticalroles`.")
+        else:
+            temp_message_sender = MessageSender(ctx.channel)
+            temp_message_sender.send_queued_messages.start()
+            await main(self.message_sender, verbose=True, modify_roles=False, only_rt=is_rt)
+            await asyncio.sleep(MessageSender.TIME_BETWEEN_MESSAGES+1)
+            temp_message_sender.send_queued_messages.cancel()
     
     @tasks.loop(seconds=LOOP_TIME)
     async def __role_updating_task__(self):
+        common.test_cutoffs.clear()
+        
         temp = self.first_run and not self.just_initialized
         if self.just_initialized:
             await self.message_sender.queue_message("I'm running again.")
