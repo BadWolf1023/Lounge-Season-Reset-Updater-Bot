@@ -4,3 +4,4 @@
 private.txt
 credentials.json
 *.pyc
+.settings/org.eclipse.core.resources.prefs
