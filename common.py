@@ -53,6 +53,7 @@ UNVERIFIED_ROLE_ID = 520821431899258890
 WAITING_ROOM_RT_ROLES = {REGULAR_TRACKS_ROLE_ID}
 WAITING_ROOM_CT_ROLES = {CUSTOM_TRACKS_ROLE_ID}
 WAITING_ROOM_RT_CT_ROLES = {ALL_TRACKS_ROLE_ID, UNVERIFIED_ROLE_ID}
+WAIT_ROOM_ROLE_IDS = WAITING_ROOM_RT_ROLES | WAITING_ROOM_CT_ROLES | WAITING_ROOM_RT_CT_ROLES
 
 
 #List will contain 2 items, rt role id in first index, ct role id in 2nd index
@@ -134,3 +135,17 @@ def isint(value:str):
 
 def get_member_info(member):
     return f"{member.mention} ({member.display_name} - {str(member)})"
+
+def get_members_with_any_role_id(members, role_ids):
+    to_return = set()
+    for role_id in role_ids:
+        to_return.update(get_members_with_role_id(members, role_id))
+    return to_return
+
+def get_members_with_role_id(members, role_id):
+    to_return = set()
+    for member in members:
+        for role in member.roles:
+            if role.id == role_id:
+                to_return.add(member)
+    return to_return

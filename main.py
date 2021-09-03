@@ -194,7 +194,34 @@ async def send_duplicate_discord_id_message(message_sender):
     if len(duplicate_players) > 0:
         for discord_id, duplicates in duplicate_players.items():
             await message_sender.queue_message(f"---- The discord ID {discord_id} matches multiple people on the website: {', '.join(player.name for player in duplicates)}", True)
-        
+
+async def __waiting_room_roles_message__(message_sender, guild, required_role_ids, track_type):
+    discord_id_player_dict, duplicate_players = get_player_discord_id_dict()
+    for member in guild.members:
+        if has_any_role_id(member, required_role_ids):
+            
+            lookup_name = Player.get_lookup_name(member.display_name)
+            if lookup_name in common.all_player_data:
+                player_data = common.all_player_data[lookup_name]
+                await message_sender.queue_message(f"---- BOSS/ARBITRATOR: {common.get_member_info(member)} has a {track_type} role, but I their name matches the player named **{player_data.name}** on the {'Google Sheet' if USING_SHEET else 'Website'}. They might have rejoined Lounge but are stuck in the waiting room. Otherwise, they have the same name as someone in Lounge and you should rename them.", True)
+            
+            elif member.id in discord_id_player_dict:
+                if member.id not in duplicate_players: #to ensure a unique match - we send a duplicate discord id error elsewhere. Once they correct that for this discord ID, this will run
+                    player_data = discord_id_player_dict[member.id]
+                    await message_sender.queue_message(f"---- BOSS/ARBITRATOR: {common.get_member_info(member)} has a {track_type} role, but I found their Discord ID on the {'Google Sheet' if USING_SHEET else 'Website'}, which matches a player named **{player_data.name}**. They rejoined Lounge but are stuck in the waiting room. Investigate and either give roles, or update the player on the website to the correct discord ID.", True)
+                
+             
+async def waiting_room_roles_message(message_sender, guild, only_rt=None):
+    do_ct = only_rt is False or only_rt is None
+    do_rt = only_rt is True or only_rt is None
+    
+    if do_rt:
+        await __waiting_room_roles_message__(message_sender, guild, common.WAITING_ROOM_RT_ROLES, track_type="RT")
+    if do_ct:
+        await __waiting_room_roles_message__(message_sender, guild, common.WAITING_ROOM_CT_ROLES, track_type="CT")
+    if only_rt is None: #Do unverified and all track roles
+        await __waiting_room_roles_message__(message_sender, guild, common.WAITING_ROOM_RT_CT_ROLES, track_type="All Track or Unverified")
+      
 async def __update_roles__(message_sender, guild:discord.Guild, rating_func, previous_role_ids, cutoff_data, remove_old_role=False, track_type="RT", role_type="Class", verbose_output=True, modify_roles=True, alternative_members=None):
     members = guild.members if modify_roles else guild.members[:500]
     members = members if alternative_members is None else alternative_members
@@ -276,12 +303,8 @@ async def __update_roles__(message_sender, guild:discord.Guild, rating_func, pre
                 
                 
                 await message_sender.queue_message(f"{common.get_member_info(member)} added roles: {new_role_obj.name}")
-
-                
-            
-            
-                
-        
+         
+             
 
 async def update_roles(message_sender, guild, verbose=True, modify_roles=True, only_rt=None, alternative_members=None):
     if verbose:
@@ -347,11 +370,13 @@ Updating roles started.""")
     
     await pull_data(message_sender, verbose)
     
+    #await send_members_with_no_roles(message_sender, lounge_server)
+        
     await send_duplicate_discord_id_message(message_sender)
     
     await update_roles(message_sender, lounge_server, verbose, modify_roles, only_rt)
     
-    #await waiting_room_roles(message_sender, lounge_server, verbose, modify_roles, only_rt)
+    await waiting_room_roles_message(message_sender, lounge_server, only_rt)
     
     if verbose:
         if not modify_roles:
