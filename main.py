@@ -14,6 +14,8 @@ import CustomExceptions
 from datetime import datetime, timedelta
 import queue
 import asyncio
+from collections import defaultdict
+
 invite_link = "https://discord.com/api/oauth2/authorize?client_id=872936275320139786&permissions=268470272&scope=bot"
 lounge_server_id = 387347467332485122
 running_channel_id = 879957305007943710
@@ -45,9 +47,9 @@ async def safe_send(channel, message_text):
         print(f"Failed to send message: {message_text}")
 
 class MessageSender(object):
-    TIME_BETWEEN_MESSAGES = 10
+    TIME_BETWEEN_MESSAGES = 5
     MAXIMUM_MESSAGE_LENGTH = 1999
-    TIME_BETWEEN_TEMPROLE_NOTIFICATIONS = timedelta(minutes=20) #20 minutes
+    TIME_BETWEEN_TEMPROLE_NOTIFICATIONS = timedelta(minutes=45) #45 minutes
     
     def __init__(self, running_channel):
         self.running_channel = running_channel
@@ -167,15 +169,36 @@ def has_role(member:discord.Member, role_to_find):
         if role.id == role_to_find.id:
             return True
     return False
-            
+
+
+def get_player_discord_id_dict():
+    discord_id_dict = {}
+    discord_id_dict_duplicates = defaultdict(list)
+    for player in common.all_player_data.values():
+        player:Player.Player
+        if player.discord_id is not None:
+            if player.discord_id not in discord_id_dict:
+                discord_id_dict[player.discord_id] = player
+            else:
+                discord_id_dict_duplicates[player.discord_id].append(player)
+                
+    for discord_id in discord_id_dict_duplicates:
+        discord_id_dict_duplicates.append(discord_id_dict[discord_id])
     
-async def __update_roles__(message_sender, guild:discord.Guild, rating_func, previous_role_ids, cutoff_data, remove_old_role=False, track_type="RT", role_type="Class", verbose_output=True, modify_roles=True):
+    return discord_id_dict, discord_id_dict_duplicates
+        
+    
+async def __update_roles__(message_sender, guild:discord.Guild, rating_func, previous_role_ids, cutoff_data, remove_old_role=False, track_type="RT", role_type="Class", verbose_output=True, modify_roles=True, alternative_members=None):
     members = guild.members if modify_roles else guild.members[:500]
+    members = members if alternative_members is None else alternative_members
+    
+    
     
     for ind, member in enumerate(members):
         if ind % 300 == 0:
             if verbose_output:
                 await message_sender.queue_message(f"---- {int(ind/len(members) * 100)}% finished with {track_type} {role_type} role updating.")
+        
         if has_any_role_id(member, previous_role_ids):
             #Need to update since they have previous role IDs
             lookup_name = Player.get_lookup_name(member.display_name)
@@ -223,12 +246,12 @@ async def __update_roles__(message_sender, guild:discord.Guild, rating_func, pre
                     try:
                         await member.remove_roles(*roles_to_remove, reason=None, atomic=True)
                     except:
-                        await message_sender.queue_message(f"---- {common.get_member_info(member)} could not remove roles: {','.join([role.name for role in roles_to_remove])} - Discord Exception")
+                        await message_sender.queue_message(f"---- {common.get_member_info(member)} could not remove roles: {', '.join([role.name for role in roles_to_remove])} - Discord Exception")
                         continue
                     
-                    await message_sender.queue_message(f"{common.get_member_info(member)} removed roles: {','.join([role.name for role in roles_to_remove])}")
+                    await message_sender.queue_message(f"{common.get_member_info(member)} removed roles: {', '.join([role.name for role in roles_to_remove])}")
                 else:
-                    await message_sender.queue_message(f"{common.get_member_info(member)} would remove roles: {','.join([role.name for role in roles_to_remove])}")
+                    await message_sender.queue_message(f"{common.get_member_info(member)} would remove roles: {', '.join([role.name for role in roles_to_remove])}")
                     
                         
             #If they already have the role, don't bother wasting an API call to add it
@@ -253,7 +276,7 @@ async def __update_roles__(message_sender, guild:discord.Guild, rating_func, pre
                 
         
 
-async def update_roles(message_sender, guild, verbose=True, modify_roles=True, only_rt=None):
+async def update_roles(message_sender, guild, verbose=True, modify_roles=True, only_rt=None, alternative_members=None):
     if verbose:
         await message_sender.queue_message(f"Lounge server has {len(guild.members)} members.")
     do_ct = only_rt is False or only_rt is None
@@ -264,25 +287,25 @@ async def update_roles(message_sender, guild, verbose=True, modify_roles=True, o
             await message_sender.queue_message("--------------- Updating RT Class Roles ---------------")
         rt_class_rating_func = lambda p: p.rt_mmr
         rt_cutoff_to_use = common.RT_CLASS_ROLE_CUTOFFS if len(common.test_cutoffs) == 0 else common.test_cutoffs
-        await __update_roles__(message_sender, guild, rt_class_rating_func, common.RT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE, rt_cutoff_to_use, True, track_type="RT", role_type="Class", verbose_output=verbose, modify_roles=modify_roles)
+        await __update_roles__(message_sender, guild, rt_class_rating_func, common.RT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE, rt_cutoff_to_use, True, track_type="RT", role_type="Class", verbose_output=verbose, modify_roles=modify_roles, alternative_members=alternative_members)
         
         if verbose:
             await message_sender.queue_message("--------------- Updating RT Ranking Roles ---------------")
         rt_role_rating_func = lambda p: p.rt_lr
-        await __update_roles__(message_sender, guild, rt_role_rating_func, common.RT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE, common.RT_RANKING_ROLE_CUTOFFS, True, track_type="RT", role_type="Ranking", verbose_output=verbose, modify_roles=modify_roles)
+        await __update_roles__(message_sender, guild, rt_role_rating_func, common.RT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE, common.RT_RANKING_ROLE_CUTOFFS, True, track_type="RT", role_type="Ranking", verbose_output=verbose, modify_roles=modify_roles, alternative_members=alternative_members)
     
     if do_ct:
         if verbose:
             await message_sender.queue_message("--------------- Updating CT Class Roles ---------------")
         ct_class_rating_func = lambda p: p.ct_mmr
         ct_cutoff_to_use = common.CT_CLASS_ROLE_CUTOFFS if len(common.test_cutoffs) == 0 else common.test_cutoffs
-        await __update_roles__(message_sender, guild, ct_class_rating_func, common.CT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE, ct_cutoff_to_use, True, track_type="CT", role_type="Class", verbose_output=verbose, modify_roles=modify_roles)
+        await __update_roles__(message_sender, guild, ct_class_rating_func, common.CT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE, ct_cutoff_to_use, True, track_type="CT", role_type="Class", verbose_output=verbose, modify_roles=modify_roles, alternative_members=alternative_members)
         
     
         if verbose:
             await message_sender.queue_message("--------------- Updating CT Ranking Roles ---------------")
         ct_role_rating_func = lambda p: p.ct_lr
-        await __update_roles__(message_sender, guild, ct_role_rating_func, common.CT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE, common.CT_RANKING_ROLE_CUTOFFS, True, track_type="CT", role_type="Ranking", verbose_output=verbose, modify_roles=modify_roles)
+        await __update_roles__(message_sender, guild, ct_role_rating_func, common.CT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE, common.CT_RANKING_ROLE_CUTOFFS, True, track_type="CT", role_type="Ranking", verbose_output=verbose, modify_roles=modify_roles, alternative_members=alternative_members)
         
 
 async def pull_data(message_sender, verbose=True, alternative_ctx=None):
@@ -317,7 +340,11 @@ Updating roles started.""")
     
     await pull_data(message_sender, verbose)
     
+    
+    
     await update_roles(message_sender, lounge_server, verbose, modify_roles, only_rt)
+    
+    #await waiting_room_roles(message_sender, lounge_server, verbose, modify_roles, only_rt)
     
     if verbose:
         if not modify_roles:
@@ -516,6 +543,7 @@ class RoleUpdater(commands.Cog):
         self.just_initialized = True
         self.first_run = False
         self.role_updating_task = self.__role_updating_task__.start()
+        self.last_run_time = datetime.now()
         
     
     def message_sender_setup(self):
@@ -738,6 +766,35 @@ For example, `!testcutoffs Class F, -Infinity, Class E, 1500, Class D, 4000, Cla
             await ctx.send(f"The bot is already running role updating every {LOOP_TIME} seconds. If you want to stop it and manually run the updating process **one time**, do `!stop` and then `!updateroles`. You should then start the automated role updating process again by doing `!resume`")
         else:
             await main(self.message_sender, verbose=True)
+    
+    
+    #Returns if data will be pulled in the next 10 seconds or if it has been pulled in the past 20 seconds
+    def will_data_pull_soon(self):
+        if not self.__role_updating_task__.is_running():
+            False, None
+        cur_time = datetime.now()
+        next_pull_time = self.last_run_time + timedelta(seconds=LOOP_TIME)
+        
+        pulling_data_estimated_run_time = timedelta(seconds=20)
+        if (self.last_run_time + pulling_data_estimated_run_time) > cur_time: #in the middle of pulling data
+            how_long_to_wait = (self.last_run_time + pulling_data_estimated_run_time) - cur_time
+            return True, how_long_to_wait
+        if (next_pull_time - timedelta(seconds=10)) < cur_time: #will pull data in the next 10 seconds
+            how_long_to_wait = cur_time - (next_pull_time - timedelta(seconds=10)) + pulling_data_estimated_run_time
+            return True, how_long_to_wait
+        return False, None
+    
+    @bot.event
+    async def on_member_join(self, new_member):
+        if self.__role_updating_task__.is_running(): #Admins didn't stop the routine, so they do want things to be affected
+            asyncio.sleep(10) #Wait for Carl or 42 to change their roles
+            pulling_soon, time_to_wait = self.will_data_pull_soon()
+            if pulling_soon:
+                asyncio.sleep(int(time_to_wait))
+            lounge_guild = self.bot.get_guild(lounge_server_id)
+            #Remember, update_roles only changes roles if they have a previous ranking/class role, so no, this doesn't allow anyone to join with someone's name and get roles
+            await update_roles(self.message_sender, lounge_guild, verbose=False, alternative_members=[new_member])
+            
             
     @commands.command()
     @commands.guild_only()
@@ -767,6 +824,7 @@ For example, `!testcutoffs Class F, -Infinity, Class E, 1500, Class D, 4000, Cla
     
     @tasks.loop(seconds=LOOP_TIME)
     async def __role_updating_task__(self):
+        self.last_run_time = datetime.now()
         common.test_cutoffs.clear()
         
         temp = self.first_run and not self.just_initialized
