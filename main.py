@@ -20,7 +20,7 @@ import traceback
 invite_link = "https://discord.com/api/oauth2/authorize?client_id=872936275320139786&permissions=268470272&scope=bot"
 lounge_server_id = 387347467332485122
 running_channel_id = 879957305007943710 #role-updater-log
-running_channel_id = 775477321498361927 #dev-botspam
+#running_channel_id = 775477321498361927 #dev-botspam
 
 
 finished_on_ready = False
@@ -172,6 +172,10 @@ def has_role(member:discord.Member, role_to_find):
             return True
     return False
 
+async def send_members_with_no_roles(message_sender, lounge_server):
+    for member in lounge_server.members:
+        if len(member.roles) == 1: #only has "everyone" role.
+            await message_sender.queue_message(f"---- BOSS/ARBITRATOR: {common.get_member_info(member)} has no roles. They are stuck in the abyss forever. (Give them an Unverified role at least.)", True)
 
 def get_player_discord_id_dict():
     discord_id_dict = {}
@@ -200,16 +204,17 @@ async def __waiting_room_roles_message__(message_sender, guild, required_role_id
     for member in guild.members:
         if has_any_role_id(member, required_role_ids):
             
-            lookup_name = Player.get_lookup_name(member.display_name)
-            if lookup_name in common.all_player_data:
-                player_data = common.all_player_data[lookup_name]
-                await message_sender.queue_message(f"---- BOSS/ARBITRATOR: {common.get_member_info(member)} has a {track_type} role, but I their name matches the player named **{player_data.name}** on the {'Google Sheet' if USING_SHEET else 'Website'}. They might have rejoined Lounge but are stuck in the waiting room. Otherwise, they have the same name as someone in Lounge and you should rename them.", True)
-            
-            elif member.id in discord_id_player_dict:
+            if member.id in discord_id_player_dict:
                 if member.id not in duplicate_players: #to ensure a unique match - we send a duplicate discord id error elsewhere. Once they correct that for this discord ID, this will run
                     player_data = discord_id_player_dict[member.id]
                     await message_sender.queue_message(f"---- BOSS/ARBITRATOR: {common.get_member_info(member)} has a {track_type} role, but I found their Discord ID on the {'Google Sheet' if USING_SHEET else 'Website'}, which matches a player named **{player_data.name}**. They rejoined Lounge but are stuck in the waiting room. Investigate and either give roles, or update the player on the website to the correct discord ID.", True)
+            else:    
+                lookup_name = Player.get_lookup_name(member.display_name)
+                #if lookup_name in common.all_player_data:
+                #    player_data = common.all_player_data[lookup_name]
+                #    await message_sender.queue_message(f"---- BOSS/ARBITRATOR: {common.get_member_info(member)} has a {track_type} role, but their name matches **{player_data.name}** on the {'Google Sheet' if USING_SHEET else 'Website'}. They might have rejoined Lounge and are stuck in the waiting room. Or they have the same name as someone in Lounge and you should rename them.", True)
                 
+
              
 async def waiting_room_roles_message(message_sender, guild, only_rt=None):
     do_ct = only_rt is False or only_rt is None
