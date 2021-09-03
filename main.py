@@ -15,10 +15,12 @@ from datetime import datetime, timedelta
 import queue
 import asyncio
 from collections import defaultdict
+import traceback
 
 invite_link = "https://discord.com/api/oauth2/authorize?client_id=872936275320139786&permissions=268470272&scope=bot"
 lounge_server_id = 387347467332485122
-running_channel_id = 879957305007943710
+running_channel_id = 879957305007943710 #role-updater-log
+running_channel_id = 775477321498361927 #dev-botspam
 
 
 finished_on_ready = False
@@ -183,14 +185,14 @@ def get_player_discord_id_dict():
                 discord_id_dict_duplicates[player.discord_id].append(player)
                 
     for discord_id in discord_id_dict_duplicates:
-        discord_id_dict_duplicates.append(discord_id_dict[discord_id])
+        discord_id_dict_duplicates[discord_id].append(discord_id_dict[discord_id])
     
     return discord_id_dict, discord_id_dict_duplicates
 
 async def send_duplicate_discord_id_message(message_sender):
     _, duplicate_players = get_player_discord_id_dict()
     if len(duplicate_players) > 0:
-        for discord_id, duplicates in duplicate_players.values():
+        for discord_id, duplicates in duplicate_players.items():
             await message_sender.queue_message(f"---- The discord ID {discord_id} matches multiple people on the website: {', '.join(player.name for player in duplicates)}", True)
         
 async def __update_roles__(message_sender, guild:discord.Guild, rating_func, previous_role_ids, cutoff_data, remove_old_role=False, track_type="RT", role_type="Class", verbose_output=True, modify_roles=True, alternative_members=None):
@@ -534,7 +536,6 @@ async def on_command_error(ctx, error):
     except discord.Forbidden:
         pass
 
-    
     raise error
 
         
@@ -863,7 +864,7 @@ For example, `!testcutoffs Class F, -Infinity, Class E, 1500, Class D, 4000, Cla
             print(f"{datetime.now()}: Bad data given to Player.")
             pass
         except Exception as e:
-            print(f"{datetime.now()}: Unknown error: {str(e)}")
+            print(f"{datetime.now()}: Unknown error: {''.join(traceback.format_exception(etype=type(e), value=e, tb=e.__traceback__))}")
             try:
                 await self.message_sender.queue_message("An unknown error happened. Let Bad Wolf know (but don't ping him too much please).")
             except:
