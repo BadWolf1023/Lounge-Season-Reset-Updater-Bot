@@ -200,6 +200,7 @@ class PlayerDataLoader:
     player_current_lr_json_name = "current_lr"
     player_last_event_date_json_name = "last_event_date"
     player_events_played_json_name = "total_events"
+    discord_id_json_name = "discord_user_id"
     
     @staticmethod
     def player_data_is_corrupt(data):
@@ -227,7 +228,8 @@ class PlayerDataLoader:
                 results[player_id] = [None, None, None, None, None, None, None, None, None, None]
                 
             results[player_id][0] = player[PlayerDataLoader.player_name_json_name]
-            results[player_id][1] = None
+            if results[player_id][1] is None:
+                results[player_id][1] = player[PlayerDataLoader.discord_id_json_name]
             results[player_id][2] = player[PlayerDataLoader.player_current_mmr_json_name]
             results[player_id][4] = player[PlayerDataLoader.player_current_lr_json_name]
             results[player_id][6] = datetime.min
@@ -246,7 +248,8 @@ class PlayerDataLoader:
                 results[player_id] = [None, None, None, None, None, None, None, None, None, None]
                 
             results[player_id][0] = player[PlayerDataLoader.player_name_json_name]
-            results[player_id][1] = None
+            if results[player_id][1] is None:
+                results[player_id][1] = player[PlayerDataLoader.discord_id_json_name]
             results[player_id][3] = player[PlayerDataLoader.player_current_mmr_json_name]
             results[player_id][5] = player[PlayerDataLoader.player_current_lr_json_name]
             results[player_id][7] = datetime.min
