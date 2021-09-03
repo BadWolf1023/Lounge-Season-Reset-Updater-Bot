@@ -874,10 +874,10 @@ For example, `!testcutoffs Class F, -Infinity, Class E, 1500, Class D, 4000, Cla
     @commands.Cog.listener()
     async def on_member_join(self, new_member):
         if self.__role_updating_task__.is_running(): #Admins didn't stop the routine, so they do want things to be affected
-            asyncio.sleep(10) #Wait for Carl or 42 to change their roles
+            await asyncio.sleep(10) #Wait for Carl or 42 to change their roles
             pulling_soon, time_to_wait = self.will_data_pull_soon()
             if pulling_soon:
-                asyncio.sleep(int(time_to_wait))
+                await asyncio.sleep(int(time_to_wait))
             lounge_guild = self.bot.get_guild(lounge_server_id)
             guild_members = lounge_guild.members
             #Remember, update_roles only changes roles if they have a previous ranking/class role, so no, this doesn't allow anyone to join with someone's name and get roles
