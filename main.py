@@ -186,8 +186,13 @@ def get_player_discord_id_dict():
         discord_id_dict_duplicates.append(discord_id_dict[discord_id])
     
     return discord_id_dict, discord_id_dict_duplicates
+
+async def send_duplicate_discord_id_message(message_sender, guild:discord.Guild):
+    _, duplicate_players = get_player_discord_id_dict()
+    if len(duplicate_players) > 0:
+        for discord_id, duplicates in duplicate_players.values():
+            await message_sender.queue_message(f"---- The discord ID {discord_id} matches multiple people on the website: {', '.join(player.name for player in duplicates)}", True)
         
-    
 async def __update_roles__(message_sender, guild:discord.Guild, rating_func, previous_role_ids, cutoff_data, remove_old_role=False, track_type="RT", role_type="Class", verbose_output=True, modify_roles=True, alternative_members=None):
     members = guild.members if modify_roles else guild.members[:500]
     members = members if alternative_members is None else alternative_members
@@ -340,7 +345,7 @@ Updating roles started.""")
     
     await pull_data(message_sender, verbose)
     
-    
+    await send_duplicate_discord_id_message(message_sender, lounge_server)
     
     await update_roles(message_sender, lounge_server, verbose, modify_roles, only_rt)
     
