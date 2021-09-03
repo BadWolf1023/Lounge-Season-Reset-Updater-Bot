@@ -187,7 +187,7 @@ def get_player_discord_id_dict():
     
     return discord_id_dict, discord_id_dict_duplicates
 
-async def send_duplicate_discord_id_message(message_sender, guild:discord.Guild):
+async def send_duplicate_discord_id_message(message_sender):
     _, duplicate_players = get_player_discord_id_dict()
     if len(duplicate_players) > 0:
         for discord_id, duplicates in duplicate_players.values():
@@ -345,7 +345,7 @@ Updating roles started.""")
     
     await pull_data(message_sender, verbose)
     
-    await send_duplicate_discord_id_message(message_sender, lounge_server)
+    await send_duplicate_discord_id_message(message_sender)
     
     await update_roles(message_sender, lounge_server, verbose, modify_roles, only_rt)
     
