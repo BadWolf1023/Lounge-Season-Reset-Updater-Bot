@@ -61,7 +61,7 @@ class MessageSender(object):
     def __temp_role_history_check__(self):
         to_delete = set()
         current_time = datetime.now()
-        for message, time_sent in self.temp_role_message_history.values():
+        for message, time_sent in self.temp_role_message_history.items():
             if (current_time - time_sent) > MessageSender.TIME_BETWEEN_TEMPROLE_NOTIFICATIONS:
                 to_delete.add(message)
                 
