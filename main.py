@@ -20,7 +20,7 @@ import traceback
 invite_link = "https://discord.com/api/oauth2/authorize?client_id=872936275320139786&permissions=268470272&scope=bot"
 lounge_server_id = 387347467332485122
 running_channel_id = 879957305007943710 #role-updater-log
-running_channel_id = 775477321498361927 #dev-botspam
+#running_channel_id = 775477321498361927 #dev-botspam
 
 
 finished_on_ready = False
@@ -921,7 +921,7 @@ For example, `!testcutoffs Class F, -Infinity, Class E, 1500, Class D, 4000, Cla
         self.just_initialized = False
         self.first_run = False
         try:
-            await main(self.message_sender, verbose=temp, modify_roles=False)
+            await main(self.message_sender, verbose=temp)
         except CustomExceptions.FatalError:
             #Should we exit...?
             print(f"{datetime.now()}: Fatal error.")
