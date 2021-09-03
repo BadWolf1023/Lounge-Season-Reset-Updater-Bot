@@ -20,7 +20,7 @@ import traceback
 invite_link = "https://discord.com/api/oauth2/authorize?client_id=872936275320139786&permissions=268470272&scope=bot"
 lounge_server_id = 387347467332485122
 running_channel_id = 879957305007943710 #role-updater-log
-#running_channel_id = 775477321498361927 #dev-botspam
+running_channel_id = 775477321498361927 #dev-botspam
 
 
 finished_on_ready = False
@@ -49,7 +49,7 @@ async def safe_send(channel, message_text):
         print(f"Failed to send message: {message_text}")
 
 class MessageSender(object):
-    TIME_BETWEEN_MESSAGES = 5
+    TIME_BETWEEN_MESSAGES = 10
     MAXIMUM_MESSAGE_LENGTH = 1999
     TIME_BETWEEN_TEMPROLE_NOTIFICATIONS = timedelta(minutes=45) #45 minutes
     
@@ -172,8 +172,8 @@ def has_role(member:discord.Member, role_to_find):
             return True
     return False
 
-async def send_members_with_no_roles(message_sender, lounge_server):
-    for member in lounge_server.members:
+async def send_members_with_no_roles(message_sender, lounge_server, guild_members):
+    for member in guild_members:
         if len(member.roles) == 1: #only has "everyone" role.
             await message_sender.queue_message(f"---- BOSS/ARBITRATOR: {common.get_member_info(member)} has no roles. They are stuck in the abyss forever. (Give them an Unverified role at least.)", True)
 
@@ -199,9 +199,9 @@ async def send_duplicate_discord_id_message(message_sender):
         for discord_id, duplicates in duplicate_players.items():
             await message_sender.queue_message(f"---- The discord ID {discord_id} matches multiple people on the website: {', '.join(player.name for player in duplicates)}", True)
 
-async def __waiting_room_roles_message__(message_sender, guild, required_role_ids, track_type):
+async def __waiting_room_roles_message__(message_sender, guild, guild_members, required_role_ids, track_type):
     discord_id_player_dict, duplicate_players = get_player_discord_id_dict()
-    for member in guild.members:
+    for member in guild_members:
         if has_any_role_id(member, required_role_ids):
             
             if member.id in discord_id_player_dict:
@@ -216,21 +216,69 @@ async def __waiting_room_roles_message__(message_sender, guild, required_role_id
                 
 
              
-async def waiting_room_roles_message(message_sender, guild, only_rt=None):
+async def waiting_room_roles_message(message_sender, guild, guild_members, only_rt=None):
     do_ct = only_rt is False or only_rt is None
     do_rt = only_rt is True or only_rt is None
     
     if do_rt:
-        await __waiting_room_roles_message__(message_sender, guild, common.WAITING_ROOM_RT_ROLES, track_type="RT")
+        await __waiting_room_roles_message__(message_sender, guild, guild_members, common.WAITING_ROOM_RT_ROLES, track_type="Regular Tracks")
     if do_ct:
-        await __waiting_room_roles_message__(message_sender, guild, common.WAITING_ROOM_CT_ROLES, track_type="CT")
+        await __waiting_room_roles_message__(message_sender, guild, guild_members, common.WAITING_ROOM_CT_ROLES, track_type="Custom Tracks")
     if only_rt is None: #Do unverified and all track roles
-        await __waiting_room_roles_message__(message_sender, guild, common.WAITING_ROOM_RT_CT_ROLES, track_type="All Track or Unverified")
+        await __waiting_room_roles_message__(message_sender, guild, guild_members, common.WAITING_ROOM_RT_CT_ROLES, track_type="All Track or Unverified")
       
-async def __update_roles__(message_sender, guild:discord.Guild, rating_func, previous_role_ids, cutoff_data, remove_old_role=False, track_type="RT", role_type="Class", verbose_output=True, modify_roles=True, alternative_members=None):
-    members = guild.members if modify_roles else guild.members[:500]
-    members = members if alternative_members is None else alternative_members
-    
+async def update_role_request_roles(message_sender, guild, guild_members, verbose=True, modify_roles=True, only_rt=None, alternative_members=None):
+    members = guild_members if alternative_members is None else alternative_members
+    for member in members:
+        if has_any_role_id(member, {common.RT_ROLE_REQUEST_ID}):
+            if not has_any_role_id(member, {common.CT_PLACEMENT_ROLE_ID} | common.CT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE | common.CT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE): #If they don't have a placement role nor a normal role, it shouldn't be possible to see this channel
+                await message_sender.queue_message(f"---- {common.get_member_info(member)} has a RT Request role, but they don't have a CT Placement role nor any other CT roles. They shouldn't be able to access the role request channel to request a role or remove their CT roles while having a RT Request role, so there is a mistake here.")
+          
+            else:
+                lookup_name = Player.get_lookup_name(member.display_name)
+                if lookup_name in common.all_player_data:
+                    rt_mmr, rt_lr = common.all_player_data[lookup_name].rt_mmr, common.all_player_data[lookup_name].rt_lr
+                    if rt_mmr is not None and rt_lr is not None:
+                        new_class_role_id = determine_new_role(rt_mmr, common.RT_CLASS_ROLE_CUTOFFS)
+                        if new_class_role_id is None:
+                            await message_sender.queue_message(f"---- {common.get_member_info(member)} could not determine new role ID for some reason, player rating is {rt_mmr}")
+                            continue
+                        
+                        new_ranking_role_id = determine_new_role(rt_lr, common.RT_RANKING_ROLE_CUTOFFS)
+                        if new_ranking_role_id is None:
+                            await message_sender.queue_message(f"---- {common.get_member_info(member)} could not determine new role ID for some reason, player rating is {rt_lr}")
+                            continue
+                        
+                        new_class_role_obj = guild.get_role(new_class_role_id)
+                        if new_class_role_obj is None:
+                            await message_sender.queue_message(f"---- {common.get_member_info(member)} could not find the following role ID in the server: {new_class_role_id}")
+                            continue
+                        
+                        new_rank_role_obj = guild.get_role(new_ranking_role_id)
+                        if new_rank_role_obj is None:
+                            await message_sender.queue_message(f"---- {common.get_member_info(member)} could not find the following role ID in the server: {new_ranking_role_id}")
+                            continue
+                        
+                    
+                        roles_to_remove = get_roles_to_remove(member, guild, {common.RT_PLACEMENT_ROLE_ID} | common.RT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE | common.RT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE)
+                        if len(roles_to_remove) == 0:
+                            await message_sender.queue_message(f"---- {common.get_member_info(member)} had no previous roles to remove. This shouldn't be possible.")
+                            continue
+                        
+                    else:
+                        pass #In the futuer, maybe assign them a placement role
+                
+        
+        if has_any_role_id(member, {common.CT_ROLE_REQUEST_ID}):
+            if not has_any_role_id(member, {common.RT_PLACEMENT_ROLE_ID} | common.RT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE | common.RT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE): #If they don't have a placement role nor a normal role, it shouldn't be possible to see this channel
+                await message_sender.queue_message(f"---- {common.get_member_info(member)} has a RT Request role, but they don't have a RT Placement role nor any other RT roles. They shouldn't be able to access the role request channel to request a role or remove their RT roles while having a CT Request role, so there is a mistake here.")
+              
+
+        
+
+
+async def __update_roles__(message_sender, guild:discord.Guild, guild_members, rating_func, previous_role_ids, cutoff_data, remove_old_role=False, track_type="RT", role_type="Class", verbose_output=True, modify_roles=True, alternative_members=None):
+    members = guild_members if alternative_members is None else alternative_members
     
     
     for ind, member in enumerate(members):
@@ -240,8 +288,8 @@ async def __update_roles__(message_sender, guild:discord.Guild, rating_func, pre
         
         if has_any_role_id(member, previous_role_ids):
             #Need to update since they have previous role IDs
-            lookup_name = Player.get_lookup_name(member.display_name)
             
+            lookup_name = Player.get_lookup_name(member.display_name)
             if lookup_name not in common.all_player_data:
                 await message_sender.queue_message(f"---- {common.get_member_info(member)} has previous {track_type} roles, but I can't find them on the {'Google Sheet' if USING_SHEET else 'Website'}.")
                 continue
@@ -254,7 +302,6 @@ async def __update_roles__(message_sender, guild:discord.Guild, rating_func, pre
         
             new_role_id = determine_new_role(player_rating, cutoff_data)
             if new_role_id is None:
-                
                 await message_sender.queue_message(f"---- {common.get_member_info(member)} could not determine new role ID for some reason, player rating is {player_rating}")
                 continue
             
@@ -311,9 +358,9 @@ async def __update_roles__(message_sender, guild:discord.Guild, rating_func, pre
          
              
 
-async def update_roles(message_sender, guild, verbose=True, modify_roles=True, only_rt=None, alternative_members=None):
+async def update_roles(message_sender, guild, guild_members, verbose=True, modify_roles=True, only_rt=None, alternative_members=None):
     if verbose:
-        await message_sender.queue_message(f"Lounge server has {len(guild.members)} members.")
+        await message_sender.queue_message(f"Lounge server has {len(guild_members)} members.")
     do_ct = only_rt is False or only_rt is None
     do_rt = only_rt is True or only_rt is None
     
@@ -322,25 +369,25 @@ async def update_roles(message_sender, guild, verbose=True, modify_roles=True, o
             await message_sender.queue_message("--------------- Updating RT Class Roles ---------------")
         rt_class_rating_func = lambda p: p.rt_mmr
         rt_cutoff_to_use = common.RT_CLASS_ROLE_CUTOFFS if len(common.test_cutoffs) == 0 else common.test_cutoffs
-        await __update_roles__(message_sender, guild, rt_class_rating_func, common.RT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE, rt_cutoff_to_use, True, track_type="RT", role_type="Class", verbose_output=verbose, modify_roles=modify_roles, alternative_members=alternative_members)
+        await __update_roles__(message_sender, guild, guild_members, rt_class_rating_func, common.RT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE, rt_cutoff_to_use, True, track_type="RT", role_type="Class", verbose_output=verbose, modify_roles=modify_roles, alternative_members=alternative_members)
         
         if verbose:
             await message_sender.queue_message("--------------- Updating RT Ranking Roles ---------------")
         rt_role_rating_func = lambda p: p.rt_lr
-        await __update_roles__(message_sender, guild, rt_role_rating_func, common.RT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE, common.RT_RANKING_ROLE_CUTOFFS, True, track_type="RT", role_type="Ranking", verbose_output=verbose, modify_roles=modify_roles, alternative_members=alternative_members)
+        await __update_roles__(message_sender, guild, guild_members, rt_role_rating_func, common.RT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE, common.RT_RANKING_ROLE_CUTOFFS, True, track_type="RT", role_type="Ranking", verbose_output=verbose, modify_roles=modify_roles, alternative_members=alternative_members)
     
     if do_ct:
         if verbose:
             await message_sender.queue_message("--------------- Updating CT Class Roles ---------------")
         ct_class_rating_func = lambda p: p.ct_mmr
         ct_cutoff_to_use = common.CT_CLASS_ROLE_CUTOFFS if len(common.test_cutoffs) == 0 else common.test_cutoffs
-        await __update_roles__(message_sender, guild, ct_class_rating_func, common.CT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE, ct_cutoff_to_use, True, track_type="CT", role_type="Class", verbose_output=verbose, modify_roles=modify_roles, alternative_members=alternative_members)
+        await __update_roles__(message_sender, guild, guild_members, ct_class_rating_func, common.CT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE, ct_cutoff_to_use, True, track_type="CT", role_type="Class", verbose_output=verbose, modify_roles=modify_roles, alternative_members=alternative_members)
         
     
         if verbose:
             await message_sender.queue_message("--------------- Updating CT Ranking Roles ---------------")
         ct_role_rating_func = lambda p: p.ct_lr
-        await __update_roles__(message_sender, guild, ct_role_rating_func, common.CT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE, common.CT_RANKING_ROLE_CUTOFFS, True, track_type="CT", role_type="Ranking", verbose_output=verbose, modify_roles=modify_roles, alternative_members=alternative_members)
+        await __update_roles__(message_sender, guild, guild_members, ct_role_rating_func, common.CT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE, common.CT_RANKING_ROLE_CUTOFFS, True, track_type="CT", role_type="Ranking", verbose_output=verbose, modify_roles=modify_roles, alternative_members=alternative_members)
         
 
 async def pull_data(message_sender, verbose=True, alternative_ctx=None):
@@ -372,16 +419,21 @@ Updating roles started.""")
         print("I can't see the bots channel that I'm supposed to be running in.")
         return
     
-    
+    #print(f"Before Lounge API hits: {datetime.now()}")
     await pull_data(message_sender, verbose)
+    #print(f"Before Member Fetch: {datetime.now()}")
+    guild_members = await lounge_server.fetch_members(limit=None).flatten()
+    #print(f"After Member Fetch: {datetime.now()}")
     
-    #await send_members_with_no_roles(message_sender, lounge_server)
+    #await send_members_with_no_roles(message_sender, lounge_server, guild_members)
         
     await send_duplicate_discord_id_message(message_sender)
     
-    await update_roles(message_sender, lounge_server, verbose, modify_roles, only_rt)
+    await update_roles(message_sender, lounge_server, guild_members, verbose, modify_roles, only_rt)
     
-    await waiting_room_roles_message(message_sender, lounge_server, only_rt)
+    #await update_role_request_roles(message_sender, lounge_server, guild_members, verbose, modify_roles, only_rt)
+    
+    await waiting_room_roles_message(message_sender, lounge_server, guild_members, only_rt)
     
     if verbose:
         if not modify_roles:
@@ -568,8 +620,7 @@ async def on_command_error(ctx, error):
 
     raise error
 
-        
-    
+         
         
 
 class RoleUpdater(commands.Cog):
@@ -820,7 +871,7 @@ For example, `!testcutoffs Class F, -Infinity, Class E, 1500, Class D, 4000, Cla
             return True, how_long_to_wait
         return False, None
     
-    @bot.event
+    @commands.Cog.listener()
     async def on_member_join(self, new_member):
         if self.__role_updating_task__.is_running(): #Admins didn't stop the routine, so they do want things to be affected
             asyncio.sleep(10) #Wait for Carl or 42 to change their roles
@@ -828,8 +879,9 @@ For example, `!testcutoffs Class F, -Infinity, Class E, 1500, Class D, 4000, Cla
             if pulling_soon:
                 asyncio.sleep(int(time_to_wait))
             lounge_guild = self.bot.get_guild(lounge_server_id)
+            guild_members = lounge_guild.members
             #Remember, update_roles only changes roles if they have a previous ranking/class role, so no, this doesn't allow anyone to join with someone's name and get roles
-            await update_roles(self.message_sender, lounge_guild, verbose=False, alternative_members=[new_member])
+            await update_roles(self.message_sender, lounge_guild, guild_members, verbose=False, alternative_members=[new_member])
             
             
     @commands.command()
@@ -869,7 +921,7 @@ For example, `!testcutoffs Class F, -Infinity, Class E, 1500, Class D, 4000, Cla
         self.just_initialized = False
         self.first_run = False
         try:
-            await main(self.message_sender, verbose=temp)
+            await main(self.message_sender, verbose=temp, modify_roles=False)
         except CustomExceptions.FatalError:
             #Should we exit...?
             print(f"{datetime.now()}: Fatal error.")

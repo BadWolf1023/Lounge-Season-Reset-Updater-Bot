@@ -113,6 +113,7 @@ class CutoffDataLoader:
                 raise CustomExceptions.NoRoleFound(error_message)
             temp_ct_class_role_cutoffs.append((data_piece[CutoffDataLoader.lower_mmr_cutoff_json_name], role_name, role_id))
             
+            
         #RT Ranking role finding and loading
         temp_rt_rank_role_cutoffs = []
         for data_piece in rt_lr_cutoff_data:
@@ -167,7 +168,7 @@ class CutoffDataLoader:
         common.CT_RANKING_ROLE_CUTOFFS.extend(temp_ct_rank_role_cutoffs)
         common.CT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE.clear()
         common.CT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE.update({data[2] for data in common.CT_RANKING_ROLE_CUTOFFS})
-        
+                
     
     
     @staticmethod 

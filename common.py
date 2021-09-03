@@ -55,10 +55,18 @@ WAITING_ROOM_CT_ROLES = {CUSTOM_TRACKS_ROLE_ID}
 WAITING_ROOM_RT_CT_ROLES = {ALL_TRACKS_ROLE_ID, UNVERIFIED_ROLE_ID}
 WAIT_ROOM_ROLE_IDS = WAITING_ROOM_RT_ROLES | WAITING_ROOM_CT_ROLES | WAITING_ROOM_RT_CT_ROLES
 
+RT_ROLE_REQUEST_ID = 555914639205204018
+CT_ROLE_REQUEST_ID = 520971584182419491
+
+RT_PLACEMENT_ROLE_ID = 723753340063842345
+CT_PLACEMENT_ROLE_ID = 723753312331104317
+PLACEMENT_ROLE_IDS = {RT_PLACEMENT_ROLE_ID, CT_PLACEMENT_ROLE_ID}
+
 
 #List will contain 2 items, rt role id in first index, ct role id in 2nd index
 top_role_ids = []
 
+    
 async def safe_send_missing_permissions(ctx, delete_after=None):
     try:
         await ctx.reply("I'm missing permissions. Contact your admins. The bot needs the following permissions:\n- Send Messages\n- Attach files", delete_after=delete_after)
