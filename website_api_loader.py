@@ -193,6 +193,8 @@ class CutoffDataLoader:
         
         return await CutoffDataLoader.__update_common_cutoffs__(rt_mmr_cutoff_data["results"], ct_mmr_cutoff_data["results"], rt_lr_cutoff_data["results"], ct_lr_cutoff_data["results"], message_sender, verbose, alternative_ctx)
 
+def print_key_data_error(key, player_data):
+    print('key:', key, 'value:', player_data[key], "type:", type(player_data[key]))
 
 class PlayerDataLoader:
     player_id_json_name = "player_id"
@@ -202,6 +204,7 @@ class PlayerDataLoader:
     player_last_event_date_json_name = "last_event_date"
     player_events_played_json_name = "total_events"
     discord_id_json_name = "discord_user_id"
+    API_REQUIRED_IN_JSON = [player_id_json_name, player_name_json_name, player_current_mmr_json_name, player_current_lr_json_name, player_last_event_date_json_name, player_events_played_json_name, discord_id_json_name]
     
     @staticmethod
     def player_data_is_corrupt(data):
@@ -209,15 +212,30 @@ class PlayerDataLoader:
             return True
     
         for player_data in data["results"]:
-            if PlayerDataLoader.player_id_json_name in player_data and isinstance(player_data[PlayerDataLoader.player_id_json_name], str) and common.isint(player_data[PlayerDataLoader.player_id_json_name])\
-            and PlayerDataLoader.player_name_json_name in player_data and isinstance(player_data[PlayerDataLoader.player_name_json_name], str) \
-            and PlayerDataLoader.player_current_mmr_json_name in player_data and isinstance(player_data[PlayerDataLoader.player_current_mmr_json_name], str) and common.isint(player_data[PlayerDataLoader.player_current_mmr_json_name])\
-            and PlayerDataLoader.player_current_lr_json_name in player_data and isinstance(player_data[PlayerDataLoader.player_current_lr_json_name], str) and common.isint(player_data[PlayerDataLoader.player_current_lr_json_name])\
-            and PlayerDataLoader.player_last_event_date_json_name in player_data and isinstance(player_data[PlayerDataLoader.player_last_event_date_json_name], str)\
-            and PlayerDataLoader.player_events_played_json_name in player_data and isinstance(player_data[PlayerDataLoader.player_events_played_json_name], str) and common.isint(player_data[PlayerDataLoader.player_events_played_json_name]):
-                continue
-            print(player_data)
-            return True
+            
+            for key in PlayerDataLoader.API_REQUIRED_IN_JSON:
+                if key not in player_data:
+                    print(f'The key "{key}" should have been in the player data: {player_data}')
+                    return True
+                
+            if not common.isint(player_data[PlayerDataLoader.player_id_json_name]):
+                print_key_data_error(PlayerDataLoader.player_id_json_name, player_data)
+                return True
+            if not isinstance(player_data[PlayerDataLoader.player_name_json_name], str):
+                print_key_data_error(PlayerDataLoader.player_name_json_name, player_data)
+                return True
+            if not common.isint(player_data[PlayerDataLoader.player_current_mmr_json_name]):
+                print_key_data_error(PlayerDataLoader.player_current_mmr_json_name, player_data)
+                return True
+            if not common.isint(player_data[PlayerDataLoader.player_current_lr_json_name]):
+                print_key_data_error(PlayerDataLoader.player_current_lr_json_name, player_data)
+                return True
+            if not isinstance(player_data[PlayerDataLoader.player_last_event_date_json_name], str):
+                print_key_data_error(PlayerDataLoader.player_last_event_date_json_name, player_data)
+                return True
+            if not common.isint(player_data[PlayerDataLoader.player_events_played_json_name]):
+                print_key_data_error(PlayerDataLoader.player_events_played_json_name, player_data)
+                return True
         return False
     
     @staticmethod 
