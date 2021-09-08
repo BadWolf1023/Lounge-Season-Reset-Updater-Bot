@@ -137,7 +137,7 @@ def isint(value:str):
     try:
         int(value)
         return True
-    except ValueError:
+    except:
         return False
 
 
