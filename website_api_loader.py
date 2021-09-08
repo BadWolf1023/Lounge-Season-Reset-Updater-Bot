@@ -17,6 +17,8 @@ CT_LR_CUTOFF_API_URL = "https://www.mkwlounge.gg/api/ladderboundary.php?ladder_i
 
 
 
+def print_key_data_error(key, data):
+    print('key:', key, 'value:', data[key], "type:", type(data[key]))
 
 class CutoffDataLoader:
     order_json_name = "ladder_order"
@@ -24,6 +26,9 @@ class CutoffDataLoader:
     mmr_role_json_name = "ladder_class_name"
     lower_lr_cutoff_json_name = "minimum_lr"
     lower_mmr_cutoff_json_name = "minimum_mmr"
+    API_REQUIRED_IN_LR_JSON = [order_json_name, lr_role_json_name, lower_lr_cutoff_json_name]
+    API_REQUIRED_IN_MMR_JSON = [order_json_name, mmr_role_json_name, lower_mmr_cutoff_json_name]
+    
     
     
     
@@ -32,14 +37,24 @@ class CutoffDataLoader:
     def __lr_cutoff_data_is_corrupt__(data):
         if not isinstance(data, dict) or "results" not in data or not isinstance(data["results"], list):
             return True
-    
+        
+
         for cutoff_piece in data["results"]:
-            if CutoffDataLoader.order_json_name in cutoff_piece and isinstance(cutoff_piece[CutoffDataLoader.order_json_name], str) and common.isint(cutoff_piece[CutoffDataLoader.order_json_name])\
-            and CutoffDataLoader.lr_role_json_name in cutoff_piece and isinstance(cutoff_piece[CutoffDataLoader.lr_role_json_name], str) \
-            and CutoffDataLoader.lower_lr_cutoff_json_name in cutoff_piece and ((isinstance(cutoff_piece[CutoffDataLoader.lower_lr_cutoff_json_name], str) and common.isint(cutoff_piece[CutoffDataLoader.lower_lr_cutoff_json_name]) or cutoff_piece[CutoffDataLoader.lower_lr_cutoff_json_name] is None)):
-                continue
-            print(cutoff_piece)
-            return True
+            
+            for key in CutoffDataLoader.API_REQUIRED_IN_LR_JSON:
+                if key not in cutoff_piece:
+                    print(f'The key "{key}" should have been in the cutoff data: {cutoff_piece}')
+                    return True
+                
+            if not common.isint(cutoff_piece[CutoffDataLoader.order_json_name]):
+                print_key_data_error(cutoff_piece, CutoffDataLoader.order_json_name)
+                return True
+            if not isinstance(cutoff_piece[CutoffDataLoader.lr_role_json_name], str):
+                print_key_data_error(cutoff_piece, CutoffDataLoader.lr_role_json_name)
+                return True
+            if not (common.isint(cutoff_piece[CutoffDataLoader.lower_lr_cutoff_json_name]) or cutoff_piece[CutoffDataLoader.lower_lr_cutoff_json_name] is None):
+                print_key_data_error(cutoff_piece, CutoffDataLoader.lower_lr_cutoff_json_name)
+                return True
         return False
     
     @staticmethod
@@ -47,12 +62,20 @@ class CutoffDataLoader:
         if not isinstance(data, dict) or "results" not in data or not isinstance(data["results"], list):
             return True
         for cutoff_piece in data["results"]:
-            if CutoffDataLoader.order_json_name in cutoff_piece and isinstance(cutoff_piece[CutoffDataLoader.order_json_name], str) and common.isint(cutoff_piece[CutoffDataLoader.order_json_name])\
-            and CutoffDataLoader.mmr_role_json_name in cutoff_piece and isinstance(cutoff_piece[CutoffDataLoader.mmr_role_json_name], str) \
-            and CutoffDataLoader.lower_mmr_cutoff_json_name in cutoff_piece and ((isinstance(cutoff_piece[CutoffDataLoader.lower_mmr_cutoff_json_name], str) and common.isint(cutoff_piece[CutoffDataLoader.lower_mmr_cutoff_json_name]) or cutoff_piece[CutoffDataLoader.lower_mmr_cutoff_json_name] is None)):
-                continue
-            print(cutoff_piece)
-            return True
+            
+            for key in CutoffDataLoader.API_REQUIRED_IN_MMR_JSON:
+                if key not in cutoff_piece:
+                    print(f'The key "{key}" should have been in the cutoff data: {cutoff_piece}')
+                    return True
+            if not common.isint(cutoff_piece[CutoffDataLoader.order_json_name]):
+                print_key_data_error(cutoff_piece, CutoffDataLoader.order_json_name)
+                return True
+            if not isinstance(cutoff_piece[CutoffDataLoader.mmr_role_json_name], str):
+                print_key_data_error(cutoff_piece, CutoffDataLoader.mmr_role_json_name)
+                return True
+            if not (common.isint(cutoff_piece[CutoffDataLoader.lower_mmr_cutoff_json_name]) or cutoff_piece[CutoffDataLoader.lower_mmr_cutoff_json_name] is None):
+                print_key_data_error(cutoff_piece, CutoffDataLoader.lower_mmr_cutoff_json_name)
+                return True
         return False
     
     @staticmethod
@@ -193,8 +216,7 @@ class CutoffDataLoader:
         
         return await CutoffDataLoader.__update_common_cutoffs__(rt_mmr_cutoff_data["results"], ct_mmr_cutoff_data["results"], rt_lr_cutoff_data["results"], ct_lr_cutoff_data["results"], message_sender, verbose, alternative_ctx)
 
-def print_key_data_error(key, player_data):
-    print('key:', key, 'value:', player_data[key], "type:", type(player_data[key]))
+
 
 class PlayerDataLoader:
     player_id_json_name = "player_id"
