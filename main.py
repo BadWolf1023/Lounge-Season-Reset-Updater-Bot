@@ -236,7 +236,25 @@ async def waiting_room_roles_message(message_sender, guild, guild_members, only_
         await __waiting_room_roles_message__(message_sender, guild, guild_members, common.WAITING_ROOM_CT_ROLES, track_type="Custom Tracks")
     if only_rt is None: #Do unverified and all track roles
         await __waiting_room_roles_message__(message_sender, guild, guild_members, common.WAITING_ROOM_RT_CT_ROLES, track_type="All Track or Unverified")
+
+
+async def __role_pair_mismatch__(message_sender, guild, guild_members, class_roles, rank_roles, track_type):
+    intermediary_track_type_message = f"n {track_type}" if track_type == "RT" else f" {track_type}"
+    for member in guild_members:
+        if has_any_role_id(member, class_roles) and not has_any_role_id(rank_roles):
+            await message_sender.queue_message(f"---- {common.get_member_info(member)} has a{intermediary_track_type_message} Class role, but doesn't have a{intermediary_track_type_message} Rank role.", is_once_every_24_hr_message=True)
+        if has_any_role_id(member, rank_roles) and not has_any_role_id(class_roles):
+            await message_sender.queue_message(f"---- {common.get_member_info(member)} has a{intermediary_track_type_message} Rank role, but doesn't have a{intermediary_track_type_message} Class role.", is_once_every_24_hr_message=True)
+
+async def role_pair_mismatch(message_sender, guild, guild_members, only_rt=None):
+    do_ct = only_rt is False or only_rt is None
+    do_rt = only_rt is True or only_rt is None
     
+    if do_rt:
+        await __role_pair_mismatch__(message_sender, guild, guild_members, common.RT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE, common.RT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE, track_type="RT")
+    if do_ct:
+        await __role_pair_mismatch__(message_sender, guild, guild_members, common.RT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE, common.RT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE, track_type="CT")
+
 async def update_role_request_roles(message_sender, guild, guild_members, verbose=True, modify_roles=True, is_rt=True, alternative_members=None):
     members = guild_members if alternative_members is None else alternative_members
     role_request_id = common.RT_ROLE_REQUEST_ID if is_rt else common.CT_ROLE_REQUEST_ID
@@ -531,6 +549,8 @@ Updating roles started.""")
         await update_role_request_roles(message_sender, lounge_server, guild_members, verbose, modify_roles, is_rt=True)
     if only_rt is None or not only_rt:
         await update_role_request_roles(message_sender, lounge_server, guild_members, verbose, modify_roles, is_rt=False)
+    
+    await role_pair_mismatch(message_sender, lounge_server, guild_members, only_rt)
     
     await waiting_room_roles_message(message_sender, lounge_server, guild_members, only_rt)
     
