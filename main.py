@@ -241,9 +241,9 @@ async def waiting_room_roles_message(message_sender, guild, guild_members, only_
 async def __role_pair_mismatch__(message_sender, guild, guild_members, class_roles, rank_roles, track_type):
     intermediary_track_type_message = f"n {track_type}" if track_type == "RT" else f" {track_type}"
     for member in guild_members:
-        if has_any_role_id(member, class_roles) and not has_any_role_id(rank_roles):
+        if has_any_role_id(member, class_roles) and not has_any_role_id(member, rank_roles):
             await message_sender.queue_message(f"---- {common.get_member_info(member)} has a{intermediary_track_type_message} Class role, but doesn't have a{intermediary_track_type_message} Rank role.", is_once_every_24_hr_message=True)
-        if has_any_role_id(member, rank_roles) and not has_any_role_id(class_roles):
+        if has_any_role_id(member, rank_roles) and not has_any_role_id(member, class_roles):
             await message_sender.queue_message(f"---- {common.get_member_info(member)} has a{intermediary_track_type_message} Rank role, but doesn't have a{intermediary_track_type_message} Class role.", is_once_every_24_hr_message=True)
 
 async def role_pair_mismatch(message_sender, guild, guild_members, only_rt=None):
