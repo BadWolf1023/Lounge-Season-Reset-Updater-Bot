@@ -253,7 +253,7 @@ async def role_pair_mismatch(message_sender, guild, guild_members, only_rt=None)
     if do_rt:
         await __role_pair_mismatch__(message_sender, guild, guild_members, common.RT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE, common.RT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE, track_type="RT")
     if do_ct:
-        await __role_pair_mismatch__(message_sender, guild, guild_members, common.RT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE, common.RT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE, track_type="CT")
+        await __role_pair_mismatch__(message_sender, guild, guild_members, common.CT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE, common.CT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE, track_type="CT")
 
 async def update_role_request_roles(message_sender, guild, guild_members, verbose=True, modify_roles=True, is_rt=True, alternative_members=None):
     members = guild_members if alternative_members is None else alternative_members
