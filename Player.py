@@ -38,7 +38,12 @@ class Player:
             self.name = sheet_list[0]
         
         if len(sheet_list) > 1:
-            self.discord_id = sheet_list[1]
+            if sheet_list[1] is None or sheet_list[1] == "":
+                self.discord_id = None
+            elif not isint(sheet_list[1]):
+                raise BadDataGiven()
+            else:
+                self.discord_id = int(sheet_list[1])
         
         if len(sheet_list) > 2:
             if sheet_list[2] is None or sheet_list[2] == "":
