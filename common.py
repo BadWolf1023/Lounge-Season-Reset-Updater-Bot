@@ -18,6 +18,16 @@ MKW_LOUNGE_GUILD_ID = 387347467332485122
 DISCORD_MAX_MESSAGE_LEN = 2000
 SERVER_ID_TO_IMPERSONATE = None
 
+mkw_lounge_staff_roles = set([387347888935534593, #Boss
+                              792805904047276032, #CT Admin
+                              399382503825211393, #HT RT Arb
+                              399384750923579392, #LT RT Arb
+                              521149807994208295, #HT CT Arb
+                              792891432301625364 #LT CT Arb
+                              ])
+
+
+
 
 
 #These are the cutoffs. If a player has less than or equal to the first number tuple, they will receive this role

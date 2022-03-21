@@ -134,7 +134,8 @@ class MessageSender(object):
         if len(to_send) > 0:
             await safe_send(self.running_channel, to_send.strip("\n"))
 
-
+def author_is_lounge_staff(message_author):
+    return has_any_role_id(message_author, common.mkw_lounge_staff_roles)
 
 def has_any_role_id(member:discord.Member, role_ids):
     for role in member.roles:
@@ -241,6 +242,8 @@ async def waiting_room_roles_message(message_sender, guild, guild_members, only_
 async def __role_pair_mismatch__(message_sender, guild, guild_members, class_roles, rank_roles, track_type):
     intermediary_track_type_message = f"n {track_type}" if track_type == "RT" else f" {track_type}"
     for member in guild_members:
+        if author_is_lounge_staff(member):
+            continue
         if has_any_role_id(member, class_roles) and not has_any_role_id(member, rank_roles):
             await message_sender.queue_message(f"---- {common.get_member_info(member)} has a{intermediary_track_type_message} Class role, but doesn't have a{intermediary_track_type_message} Rank role.", is_once_every_24_hr_message=True)
         if has_any_role_id(member, rank_roles) and not has_any_role_id(member, class_roles):
@@ -439,7 +442,8 @@ async def __update_roles__(message_sender, guild:discord.Guild, guild_members, r
                 if len(roles_to_remove) == 0:
                     continue
                 if original_length != len(roles_to_remove):
-                    await message_sender.queue_message(f"{common.get_member_info(member)} has multiple roles ({', '.join([r.name for r in original_roles])}). They might be temp-roled, so I will not change their roles.", True)
+                    if not author_is_lounge_staff(member):
+                        await message_sender.queue_message(f"{common.get_member_info(member)} has multiple roles ({', '.join([r.name for r in original_roles])}). They might be temp-roled, so I will not change their roles.", True)
                     continue
                 
                 if modify_roles:
@@ -936,7 +940,7 @@ For example, `!testcutoffs Class F, -Infinity, Class E, 1500, Class D, 4000, Cla
     @commands.guild_only()
     @lounge_only_check()
     @commands.max_concurrency(number=1,wait=True)
-    @badwolf_command_check()
+    #@badwolf_command_check()
     async def resume(self, ctx): #suppress
         """This command resumes the bot keeping everyone's role up to date, which runs every 120 seconds."""
         if self.__role_updating_task__.is_running():

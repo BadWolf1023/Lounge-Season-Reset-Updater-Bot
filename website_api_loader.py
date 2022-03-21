@@ -8,12 +8,12 @@ import core_data_loader
 import common
 from typing import List
 from datetime import datetime
-RT_PLAYER_DATA_API_URL = "https://www.mkwlounge.gg/api/ladderplayer.php?ladder_id=1&all=1"
-CT_PLAYER_DATA_API_URL = "https://www.mkwlounge.gg/api/ladderplayer.php?ladder_id=2&all=1"
-RT_MMR_CUTOFF_API_URL = "https://www.mkwlounge.gg/api/ladderclass.php?ladder_id=1"
-CT_MMR_CUTOFF_API_URL = "https://www.mkwlounge.gg/api/ladderclass.php?ladder_id=2"
-RT_LR_CUTOFF_API_URL = "https://www.mkwlounge.gg/api/ladderboundary.php?ladder_id=1"
-CT_LR_CUTOFF_API_URL = "https://www.mkwlounge.gg/api/ladderboundary.php?ladder_id=2"
+RT_PLAYER_DATA_API_URL = "https://www.mkwlounge.gg/api/ladderplayer.php?ladder_type=rt&all=1"
+CT_PLAYER_DATA_API_URL = "https://www.mkwlounge.gg/api/ladderplayer.php?ladder_type=ct&all=1"
+RT_MMR_CUTOFF_API_URL = "https://www.mkwlounge.gg/api/ladderclass.php?ladder_type=rt"
+CT_MMR_CUTOFF_API_URL = "https://www.mkwlounge.gg/api/ladderclass.php?ladder_type=ct"
+RT_LR_CUTOFF_API_URL = "https://www.mkwlounge.gg/api/ladderboundary.php?ladder_type=rt"
+CT_LR_CUTOFF_API_URL = "https://www.mkwlounge.gg/api/ladderboundary.php?ladder_type=ct"
 
 
 
