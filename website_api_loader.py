@@ -3,22 +3,99 @@ Created on Aug 21, 2021
 
 @author: willg
 '''
+import discord
+
 import CustomExceptions
 import core_data_loader
 import common
 from typing import List
-from datetime import datetime
+from datetime import datetime, timedelta
+
 RT_PLAYER_DATA_API_URL = "https://www.mkwlounge.gg/api/ladderplayer.php?ladder_type=rt&all=1"
 CT_PLAYER_DATA_API_URL = "https://www.mkwlounge.gg/api/ladderplayer.php?ladder_type=ct&all=1"
 RT_MMR_CUTOFF_API_URL = "https://www.mkwlounge.gg/api/ladderclass.php?ladder_type=rt"
 CT_MMR_CUTOFF_API_URL = "https://www.mkwlounge.gg/api/ladderclass.php?ladder_type=ct"
 RT_LR_CUTOFF_API_URL = "https://www.mkwlounge.gg/api/ladderboundary.php?ladder_type=rt"
 CT_LR_CUTOFF_API_URL = "https://www.mkwlounge.gg/api/ladderboundary.php?ladder_type=ct"
+RT_EVENT_DATA_API_URL = "https://www.mkwlounge.gg/api/ladderevent.php?all&ladder_type=rt"
+CT_EVENT_DATA_API_URL = "https://www.mkwlounge.gg/api/ladderevent.php?all&ladder_type=ct"
+
+LAST_PLAYER_DATA_PULL_TIME = None
+LAST_CUTOFF_PULL_TIME = None
+LAST_EVENT_PULL_TIME = None
+
+PLAYER_PULL_CACHE_TIME = timedelta(minutes=10)
+CUTOFF_PULL_CACHE_TIME = timedelta(minutes=2)
+EVENT_PULL_CACHE_TIME = timedelta(minutes=10)
 
 
 
 def print_key_data_error(key, data):
     print('key:', key, 'value:', data[key], "type:", type(data[key]))
+
+class TierDataLoader:
+    tier_json_name = "tier"
+    event_date_name = "event_date"
+    API_REQUIRED_IN_JSON = [tier_json_name, event_date_name]
+
+    @staticmethod
+    def __data_is_corrupt__(data):
+        if not isinstance(data, dict) or "results" not in data or not isinstance(data["results"], list):
+            return True
+
+        for event_data in data["results"]:
+            for key in TierDataLoader.API_REQUIRED_IN_JSON:
+                if key not in event_data:
+                    print(f'The key "{key}" should have been in the cutoff data: {event_data}')
+                    return True
+
+            if not common.is_datetime(event_data[TierDataLoader.event_date_name]):
+                print_key_data_error(event_data, TierDataLoader.event_date_name)
+                return True
+        return False
+
+    @staticmethod
+    async def __fix_data__(events: List):
+        for event in events:
+            event[TierDataLoader.event_date_name] = common.get_datetime(event[TierDataLoader.event_date_name])
+
+    @staticmethod
+    async def __update_event_data__(rt_tier_data, ct_tier_data):
+        await TierDataLoader.__fix_data__(rt_tier_data)
+        await TierDataLoader.__fix_data__(ct_tier_data)
+
+        common.RT_EVENT_DATA.clear()
+        common.CT_EVENT_DATA.clear()
+
+        for data_piece in rt_tier_data:
+            tier = data_piece[TierDataLoader.tier_json_name]
+            event_date = data_piece[TierDataLoader.event_date_name]
+            common.RT_EVENT_DATA.append((tier, event_date))
+        for data_piece in ct_tier_data:
+            tier = data_piece[TierDataLoader.tier_json_name]
+            event_date = data_piece[TierDataLoader.event_date_name]
+            common.CT_EVENT_DATA.append((tier, event_date))
+
+    @staticmethod
+    async def update_event_data(interaction, override_cache=False):
+        global LAST_EVENT_PULL_TIME
+        if not override_cache:
+            # Check cache time
+            if LAST_EVENT_PULL_TIME is not None and \
+                    LAST_EVENT_PULL_TIME + EVENT_PULL_CACHE_TIME > datetime.now():
+                return
+        rt_event_data = await common.get_json_data(RT_EVENT_DATA_API_URL)
+        ct_event_data = await common.get_json_data(CT_EVENT_DATA_API_URL)
+
+        if TierDataLoader.__data_is_corrupt__(rt_event_data):
+            await interaction.followup.send("RT Event Data was corrupt.")
+            raise CustomExceptions.EventAPIBadData("RT Event Data was corrupt.")
+        if TierDataLoader.__data_is_corrupt__(ct_event_data):
+            await interaction.followup.send("CT Event Data was corrupt.")
+            raise CustomExceptions.EventAPIBadData("CT Event Data was corrupt.")
+
+        await TierDataLoader.__update_event_data__(rt_event_data["results"], ct_event_data["results"])
+        LAST_EVENT_PULL_TIME = datetime.now()
 
 class CutoffDataLoader:
     order_json_name = "ladder_order"
@@ -28,10 +105,7 @@ class CutoffDataLoader:
     lower_mmr_cutoff_json_name = "minimum_mmr"
     API_REQUIRED_IN_LR_JSON = [order_json_name, lr_role_json_name, lower_lr_cutoff_json_name]
     API_REQUIRED_IN_MMR_JSON = [order_json_name, mmr_role_json_name, lower_mmr_cutoff_json_name]
-    
-    
-    
-    
+
     
     @staticmethod
     def __lr_cutoff_data_is_corrupt__(data):
@@ -95,115 +169,70 @@ class CutoffDataLoader:
                 
     
     @staticmethod 
-    async def __update_common_cutoffs__(rt_mmr_cutoff_data, ct_mmr_cutoff_data, rt_lr_cutoff_data, ct_lr_cutoff_data, message_sender, verbose=False, alternative_ctx=None):
+    async def __update_common_cutoffs__(rt_mmr_cutoff_data, ct_mmr_cutoff_data, rt_lr_cutoff_data, ct_lr_cutoff_data, interaction: discord.Interaction):
         await CutoffDataLoader.__fix_cutoff_data__(rt_mmr_cutoff_data, is_rt=True)
         await CutoffDataLoader.__fix_cutoff_data__(ct_mmr_cutoff_data, is_rt=False)
         await CutoffDataLoader.__fix_cutoff_data__(rt_lr_cutoff_data, is_rt=True)
         await CutoffDataLoader.__fix_cutoff_data__(ct_lr_cutoff_data, is_rt=False)
-        
-        all_roles = message_sender.running_channel.guild.roles
-        
-        #RT Class role finding and loading
-        temp_rt_class_role_cutoffs = []
+
+        common.RT_CLASS_ROLE_CUTOFFS.clear()
+        common.CT_CLASS_ROLE_CUTOFFS.clear()
+        common.RT_RANKING_ROLE_CUTOFFS.clear()
+        common.CT_RANKING_ROLE_CUTOFFS.clear()
+
+        # RT Class
         for data_piece in rt_mmr_cutoff_data:
             role_name = data_piece[CutoffDataLoader.mmr_role_json_name]
-            fixed_role_name = role_name.lower().replace(" ", "")
-            role_id = None
-            for role in all_roles:
-                if role.name.lower().replace(" ", "") == fixed_role_name:
-                    role_id = role.id
-                    break
-            else:
-                error_message = f"No role found in the server named {role_name}"
-                await message_sender.send_message(error_message, True, alternative_ctx=alternative_ctx)
-                raise CustomExceptions.NoRoleFound(error_message)
-            temp_rt_class_role_cutoffs.append((data_piece[CutoffDataLoader.lower_mmr_cutoff_json_name], role_name, role_id))
+            lower_cutoff_name = data_piece[CutoffDataLoader.lower_mmr_cutoff_json_name]
+            common.RT_CLASS_ROLE_CUTOFFS.append((lower_cutoff_name, role_name))
         
-        #CT Class role finding and loading
-        temp_ct_class_role_cutoffs = []
+        #CT Class
         for data_piece in ct_mmr_cutoff_data:
             role_name = data_piece[CutoffDataLoader.mmr_role_json_name]
-            fixed_role_name = role_name.lower().replace(" ", "")
-            role_id = None
-            for role in all_roles:
-                if role.name.lower().replace(" ", "") == fixed_role_name:
-                    role_id = role.id
-                    break
-            else:
-                error_message = f"No role found in the server named {role_name}"
-                await message_sender.send_message(error_message, True, alternative_ctx=alternative_ctx)
-                raise CustomExceptions.NoRoleFound(error_message)
-            temp_ct_class_role_cutoffs.append((data_piece[CutoffDataLoader.lower_mmr_cutoff_json_name], role_name, role_id))
-            
-            
-        #RT Ranking role finding and loading
-        temp_rt_rank_role_cutoffs = []
+            lower_cutoff_name = data_piece[CutoffDataLoader.lower_mmr_cutoff_json_name]
+            common.CT_CLASS_ROLE_CUTOFFS.append((lower_cutoff_name, role_name))
+
+        #RT Ranking
         for data_piece in rt_lr_cutoff_data:
             role_name = data_piece[CutoffDataLoader.lr_role_json_name]
-            fixed_role_name = role_name.lower().replace(" ", "")
-            role_id = None
-            for role in all_roles:
-                if role.name.lower().replace(" ", "") == fixed_role_name:
-                    role_id = role.id
-                    break
-            else:
-                error_message = f"No role found in the server named {role_name}"
-                await message_sender.send_message(error_message, True, alternative_ctx=alternative_ctx)
-                raise CustomExceptions.NoRoleFound(error_message)
-            temp_rt_rank_role_cutoffs.append((data_piece[CutoffDataLoader.lower_lr_cutoff_json_name], role_name, role_id))
+            lower_cutoff_name = data_piece[CutoffDataLoader.lower_lr_cutoff_json_name]
+            common.RT_RANKING_ROLE_CUTOFFS.append((lower_cutoff_name, role_name))
         
-        #CT Ranking role finding and loading
+        #CT Ranking
         temp_ct_rank_role_cutoffs = []
         for data_piece in ct_lr_cutoff_data:
             role_name = data_piece[CutoffDataLoader.lr_role_json_name]
-            fixed_role_name = role_name.lower().replace(" ", "")
-            role_id = None
-            for role in all_roles:
-                if role.name.lower().replace(" ", "") == fixed_role_name:
-                    role_id = role.id
-                    break
-            else:
-                error_message = f"No role found in the server named {role_name}"
-                await message_sender.send_message(error_message, True, alternative_ctx=alternative_ctx)
-                raise CustomExceptions.NoRoleFound(error_message)
-            temp_ct_rank_role_cutoffs.append((data_piece[CutoffDataLoader.lower_lr_cutoff_json_name], role_name, role_id))
-            
-
-        common.RT_CLASS_ROLE_CUTOFFS.clear()
-        common.RT_CLASS_ROLE_CUTOFFS.extend(temp_rt_class_role_cutoffs)
-
-        common.CT_CLASS_ROLE_CUTOFFS.clear()
-        common.CT_CLASS_ROLE_CUTOFFS.extend(temp_ct_class_role_cutoffs)
-
-        common.RT_RANKING_ROLE_CUTOFFS.clear()
-        common.RT_RANKING_ROLE_CUTOFFS.extend(temp_rt_rank_role_cutoffs)
-
-        common.CT_RANKING_ROLE_CUTOFFS.clear()
-        common.CT_RANKING_ROLE_CUTOFFS.extend(temp_ct_rank_role_cutoffs)
-                
+            lower_cutoff_name = data_piece[CutoffDataLoader.lower_lr_cutoff_json_name]
+            common.CT_RANKING_ROLE_CUTOFFS.append((lower_cutoff_name, role_name))
 
     @staticmethod 
-    async def update_cutoff_data(message_sender, verbose=False, alternative_ctx=None):
-        rt_mmr_cutoff_data = await common.getJSONData(RT_MMR_CUTOFF_API_URL)
-        ct_mmr_cutoff_data = await common.getJSONData(CT_MMR_CUTOFF_API_URL)
-        rt_lr_cutoff_data = await common.getJSONData(RT_LR_CUTOFF_API_URL)
-        ct_lr_cutoff_data = await common.getJSONData(CT_LR_CUTOFF_API_URL)
+    async def update_cutoff_data(interaction, override_cache=False):
+        global LAST_CUTOFF_PULL_TIME
+        if not override_cache:
+            # Check cache time
+            if LAST_CUTOFF_PULL_TIME is not None and \
+                LAST_CUTOFF_PULL_TIME + CUTOFF_PULL_CACHE_TIME > datetime.now():
+                return
+        rt_mmr_cutoff_data = await common.get_json_data(RT_MMR_CUTOFF_API_URL)
+        ct_mmr_cutoff_data = await common.get_json_data(CT_MMR_CUTOFF_API_URL)
+        rt_lr_cutoff_data = await common.get_json_data(RT_LR_CUTOFF_API_URL)
+        ct_lr_cutoff_data = await common.get_json_data(CT_LR_CUTOFF_API_URL)
         
         if CutoffDataLoader.__mmr_cutoff_data_is_corrupt__(rt_mmr_cutoff_data):
-            await message_sender.send_message("RT MMR Cutoff Data was corrupt.", True, alternative_ctx=alternative_ctx)
+            await interaction.followup.send("RT MMR Cutoff Data was corrupt.")
             raise CustomExceptions.CutoffAPIBadData("RT MMR Cutoff Data was corrupt.")
         if CutoffDataLoader.__mmr_cutoff_data_is_corrupt__(ct_mmr_cutoff_data):
-            await message_sender.send_message("CT MMR Cutoff Data was corrupt.", True, alternative_ctx=alternative_ctx)
+            await interaction.followup.send("CT MMR Cutoff Data was corrupt.")
             raise CustomExceptions.CutoffAPIBadData("CT MMR Cutoff Data was corrupt.")
         if CutoffDataLoader.__lr_cutoff_data_is_corrupt__(rt_lr_cutoff_data):
-            await message_sender.send_message("RT LR Cutoff Data was corrupt.", True, alternative_ctx=alternative_ctx)
+            await interaction.followup.send("RT LR Cutoff Data was corrupt.")
             raise CustomExceptions.CutoffAPIBadData("RT LR Cutoff Data was corrupt.")
         if CutoffDataLoader.__lr_cutoff_data_is_corrupt__(ct_lr_cutoff_data):
-            await message_sender.send_message("CT LR Cutoff Data was corrupt.", True, alternative_ctx=alternative_ctx)
+            await interaction.followup.send("CT LR Cutoff Data was corrupt.")
             raise CustomExceptions.CutoffAPIBadData("CT LR Cutoff Data was corrupt.")
         
-        return await CutoffDataLoader.__update_common_cutoffs__(rt_mmr_cutoff_data["results"], ct_mmr_cutoff_data["results"], rt_lr_cutoff_data["results"], ct_lr_cutoff_data["results"], message_sender, verbose, alternative_ctx)
-
+        await CutoffDataLoader.__update_common_cutoffs__(rt_mmr_cutoff_data["results"], ct_mmr_cutoff_data["results"], rt_lr_cutoff_data["results"], ct_lr_cutoff_data["results"], interaction)
+        LAST_CUTOFF_PULL_TIME = datetime.now()
 
 
 class PlayerDataLoader:
@@ -294,21 +323,29 @@ class PlayerDataLoader:
         return list(results.values())
 
     @staticmethod 
-    async def get_player_data(message_sender, verbose=False, alternative_ctx=None):
-        rt_data = await common.getJSONData(RT_PLAYER_DATA_API_URL)
-        ct_data = await common.getJSONData(CT_PLAYER_DATA_API_URL)
+    async def get_player_data(interaction: discord.Interaction):
+        rt_data = await common.get_json_data(RT_PLAYER_DATA_API_URL)
+        ct_data = await common.get_json_data(CT_PLAYER_DATA_API_URL)
         
         if PlayerDataLoader.player_data_is_corrupt(rt_data):
-            await message_sender.send_message("RT Data was corrupt.", True, alternative_ctx=alternative_ctx)
+            await interaction.followup.send("RT Data was corrupt.")
             raise CustomExceptions.PlayerDataAPIBadData("RT Data was corrupt.")
         if PlayerDataLoader.player_data_is_corrupt(ct_data):
-            await message_sender.send_message("CT Data was corrupt.", True, alternative_ctx=alternative_ctx)
+            await interaction.followup.send("CT Data was corrupt.")
             raise CustomExceptions.PlayerDataAPIBadData("CT Data was corrupt.")
-        
+
         return await PlayerDataLoader.merge_data(rt_data["results"], ct_data["results"])
         
     @staticmethod
-    async def update_player_data(message_sender, verbose=False, alternative_ctx=None):
-        to_load = await PlayerDataLoader.get_player_data(message_sender, verbose, alternative_ctx)
-        await core_data_loader.read_player_data_in(message_sender, to_load, verbose, alternative_ctx)
+    async def update_player_data(interaction: discord.Interaction, override_cache=False):
+        global LAST_PLAYER_DATA_PULL_TIME
+        if not override_cache:
+            # Check cache time
+            if LAST_PLAYER_DATA_PULL_TIME is not None and \
+                LAST_PLAYER_DATA_PULL_TIME + PLAYER_PULL_CACHE_TIME > datetime.now():
+                return
+
+        to_load = await PlayerDataLoader.get_player_data(interaction)
+        await core_data_loader.read_player_data_in(interaction, to_load)
+        LAST_PLAYER_DATA_PULL_TIME = datetime.now()
     

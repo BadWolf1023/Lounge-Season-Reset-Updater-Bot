@@ -3,13 +3,12 @@ Created on Feb 23, 2021
 
 @author: willg
 '''
+from discord.app_commands import AppCommandError
 
-from discord.ext.commands import CommandError
-
-class NotLounge(CommandError):
+class NotLounge(AppCommandError):
     pass
 
-class NotBadWolf(CommandError):
+class NotBadWolf(AppCommandError):
     pass
 
 class BadAPIData(Exception):
@@ -19,6 +18,9 @@ class CutoffAPIBadData(BadAPIData):
     pass
 
 class NoRoleFound(CutoffAPIBadData):
+    pass
+
+class EventAPIBadData(BadAPIData):
     pass
 
 class PlayerDataAPIBadData(BadAPIData):
