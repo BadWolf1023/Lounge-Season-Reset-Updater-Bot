@@ -110,17 +110,8 @@ class Player:
     
     def __str__(self):
         return f"Name: {self.name}, Discord ID: {self.discord_id}, RT MMR: {self.rt_mmr}, RT LR: {self.rt_lr}, CT MMR: {self.ct_mmr}, CT LR: {self.ct_lr}"
-    
-                
-                
-            
-    
-    
+
 
 def get_lookup_name(name:str):
     return name.strip().lower().replace(" ", "")
-        
-        
-    
-        
         

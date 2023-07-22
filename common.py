@@ -45,36 +45,8 @@ CT_CLASS_ROLE_CUTOFFS = []
 
 test_cutoffs = []
 
-#For players to get an updated RT Ranking role, they must have one of these role IDs first
-RT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE = set()
-#For players to get an updated CT Ranking role, they must have one of these role IDs first
-CT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE = set()
-#For players to get an updated RT Class role, they must have one of these role IDs first
-RT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE = set()
-#For players to get an updated CT Class role, they must have one of these role IDs first
-CT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE = set()
-
 all_player_data = {}
 
-REGULAR_TRACKS_ROLE_ID = 520829050030129182
-CUSTOM_TRACKS_ROLE_ID = 520828983630364689
-ALL_TRACKS_ROLE_ID = 520829099841814539
-UNVERIFIED_ROLE_ID = 520821431899258890
-WAITING_ROOM_RT_ROLES = {REGULAR_TRACKS_ROLE_ID}
-WAITING_ROOM_CT_ROLES = {CUSTOM_TRACKS_ROLE_ID}
-WAITING_ROOM_RT_CT_ROLES = {ALL_TRACKS_ROLE_ID, UNVERIFIED_ROLE_ID}
-WAIT_ROOM_ROLE_IDS = WAITING_ROOM_RT_ROLES | WAITING_ROOM_CT_ROLES | WAITING_ROOM_RT_CT_ROLES
-
-RT_ROLE_REQUEST_ID = 555914639205204018
-CT_ROLE_REQUEST_ID = 520971584182419491
-
-RT_PLACEMENT_ROLE_ID = 723753340063842345
-CT_PLACEMENT_ROLE_ID = 723753312331104317
-PLACEMENT_ROLE_IDS = {RT_PLACEMENT_ROLE_ID, CT_PLACEMENT_ROLE_ID}
-
-
-#List will contain 2 items, rt role id in first index, ct role id in 2nd index
-top_role_ids = []
 
     
 async def safe_send_missing_permissions(ctx, delete_after=None):
@@ -154,16 +126,3 @@ def isint(value:str):
 def get_member_info(member):
     return f"{member.mention} ({member.display_name} - {str(member)})"
 
-def get_members_with_any_role_id(members, role_ids):
-    to_return = set()
-    for role_id in role_ids:
-        to_return.update(get_members_with_role_id(members, role_id))
-    return to_return
-
-def get_members_with_role_id(members, role_id):
-    to_return = set()
-    for member in members:
-        for role in member.roles:
-            if role.id == role_id:
-                to_return.add(member)
-    return to_return

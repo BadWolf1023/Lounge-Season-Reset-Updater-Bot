@@ -40,7 +40,6 @@ class CutoffDataLoader:
         
 
         for cutoff_piece in data["results"]:
-            
             for key in CutoffDataLoader.API_REQUIRED_IN_LR_JSON:
                 if key not in cutoff_piece:
                     print(f'The key "{key}" should have been in the cutoff data: {cutoff_piece}')
@@ -116,7 +115,7 @@ class CutoffDataLoader:
                     break
             else:
                 error_message = f"No role found in the server named {role_name}"
-                await message_sender.queue_message(error_message, True, alternative_ctx=alternative_ctx)
+                await message_sender.send_message(error_message, True, alternative_ctx=alternative_ctx)
                 raise CustomExceptions.NoRoleFound(error_message)
             temp_rt_class_role_cutoffs.append((data_piece[CutoffDataLoader.lower_mmr_cutoff_json_name], role_name, role_id))
         
@@ -132,7 +131,7 @@ class CutoffDataLoader:
                     break
             else:
                 error_message = f"No role found in the server named {role_name}"
-                await message_sender.queue_message(error_message, True, alternative_ctx=alternative_ctx)
+                await message_sender.send_message(error_message, True, alternative_ctx=alternative_ctx)
                 raise CustomExceptions.NoRoleFound(error_message)
             temp_ct_class_role_cutoffs.append((data_piece[CutoffDataLoader.lower_mmr_cutoff_json_name], role_name, role_id))
             
@@ -149,7 +148,7 @@ class CutoffDataLoader:
                     break
             else:
                 error_message = f"No role found in the server named {role_name}"
-                await message_sender.queue_message(error_message, True, alternative_ctx=alternative_ctx)
+                await message_sender.send_message(error_message, True, alternative_ctx=alternative_ctx)
                 raise CustomExceptions.NoRoleFound(error_message)
             temp_rt_rank_role_cutoffs.append((data_piece[CutoffDataLoader.lower_lr_cutoff_json_name], role_name, role_id))
         
@@ -165,35 +164,24 @@ class CutoffDataLoader:
                     break
             else:
                 error_message = f"No role found in the server named {role_name}"
-                await message_sender.queue_message(error_message, True, alternative_ctx=alternative_ctx)
+                await message_sender.send_message(error_message, True, alternative_ctx=alternative_ctx)
                 raise CustomExceptions.NoRoleFound(error_message)
             temp_ct_rank_role_cutoffs.append((data_piece[CutoffDataLoader.lower_lr_cutoff_json_name], role_name, role_id))
             
 
         common.RT_CLASS_ROLE_CUTOFFS.clear()
         common.RT_CLASS_ROLE_CUTOFFS.extend(temp_rt_class_role_cutoffs)
-        common.RT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE.clear()
-        common.RT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE.update({data[2] for data in common.RT_CLASS_ROLE_CUTOFFS})
-        
 
         common.CT_CLASS_ROLE_CUTOFFS.clear()
         common.CT_CLASS_ROLE_CUTOFFS.extend(temp_ct_class_role_cutoffs)
-        common.CT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE.clear()
-        common.CT_MUST_HAVE_ROLE_ID_TO_UPDATE_CLASS_ROLE.update({data[2] for data in common.CT_CLASS_ROLE_CUTOFFS})
-        
 
         common.RT_RANKING_ROLE_CUTOFFS.clear()
         common.RT_RANKING_ROLE_CUTOFFS.extend(temp_rt_rank_role_cutoffs)
-        common.RT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE.clear()
-        common.RT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE.update({data[2] for data in common.RT_RANKING_ROLE_CUTOFFS})
 
         common.CT_RANKING_ROLE_CUTOFFS.clear()
         common.CT_RANKING_ROLE_CUTOFFS.extend(temp_ct_rank_role_cutoffs)
-        common.CT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE.clear()
-        common.CT_MUST_HAVE_ROLE_ID_TO_UPDATE_RANKING_ROLE.update({data[2] for data in common.CT_RANKING_ROLE_CUTOFFS})
                 
-    
-    
+
     @staticmethod 
     async def update_cutoff_data(message_sender, verbose=False, alternative_ctx=None):
         rt_mmr_cutoff_data = await common.getJSONData(RT_MMR_CUTOFF_API_URL)
@@ -202,16 +190,16 @@ class CutoffDataLoader:
         ct_lr_cutoff_data = await common.getJSONData(CT_LR_CUTOFF_API_URL)
         
         if CutoffDataLoader.__mmr_cutoff_data_is_corrupt__(rt_mmr_cutoff_data):
-            await message_sender.queue_message("RT MMR Cutoff Data was corrupt.", True, alternative_ctx=alternative_ctx)
+            await message_sender.send_message("RT MMR Cutoff Data was corrupt.", True, alternative_ctx=alternative_ctx)
             raise CustomExceptions.CutoffAPIBadData("RT MMR Cutoff Data was corrupt.")
         if CutoffDataLoader.__mmr_cutoff_data_is_corrupt__(ct_mmr_cutoff_data):
-            await message_sender.queue_message("CT MMR Cutoff Data was corrupt.", True, alternative_ctx=alternative_ctx)
+            await message_sender.send_message("CT MMR Cutoff Data was corrupt.", True, alternative_ctx=alternative_ctx)
             raise CustomExceptions.CutoffAPIBadData("CT MMR Cutoff Data was corrupt.")
         if CutoffDataLoader.__lr_cutoff_data_is_corrupt__(rt_lr_cutoff_data):
-            await message_sender.queue_message("RT LR Cutoff Data was corrupt.", True, alternative_ctx=alternative_ctx)
+            await message_sender.send_message("RT LR Cutoff Data was corrupt.", True, alternative_ctx=alternative_ctx)
             raise CustomExceptions.CutoffAPIBadData("RT LR Cutoff Data was corrupt.")
         if CutoffDataLoader.__lr_cutoff_data_is_corrupt__(ct_lr_cutoff_data):
-            await message_sender.queue_message("CT LR Cutoff Data was corrupt.", True, alternative_ctx=alternative_ctx)
+            await message_sender.send_message("CT LR Cutoff Data was corrupt.", True, alternative_ctx=alternative_ctx)
             raise CustomExceptions.CutoffAPIBadData("CT LR Cutoff Data was corrupt.")
         
         return await CutoffDataLoader.__update_common_cutoffs__(rt_mmr_cutoff_data["results"], ct_mmr_cutoff_data["results"], rt_lr_cutoff_data["results"], ct_lr_cutoff_data["results"], message_sender, verbose, alternative_ctx)
@@ -311,10 +299,10 @@ class PlayerDataLoader:
         ct_data = await common.getJSONData(CT_PLAYER_DATA_API_URL)
         
         if PlayerDataLoader.player_data_is_corrupt(rt_data):
-            await message_sender.queue_message("RT Data was corrupt.", True, alternative_ctx=alternative_ctx)
+            await message_sender.send_message("RT Data was corrupt.", True, alternative_ctx=alternative_ctx)
             raise CustomExceptions.PlayerDataAPIBadData("RT Data was corrupt.")
         if PlayerDataLoader.player_data_is_corrupt(ct_data):
-            await message_sender.queue_message("CT Data was corrupt.", True, alternative_ctx=alternative_ctx)
+            await message_sender.send_message("CT Data was corrupt.", True, alternative_ctx=alternative_ctx)
             raise CustomExceptions.PlayerDataAPIBadData("CT Data was corrupt.")
         
         return await PlayerDataLoader.merge_data(rt_data["results"], ct_data["results"])
