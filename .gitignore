@@ -5,3 +5,8 @@ private.txt
 credentials.json
 *.pyc
 .settings/org.eclipse.core.resources.prefs
+.idea/vcs.xml
+.idea/modules.xml
+.idea/misc.xml
+.idea/Lounge-Season-Reset-Updater-Bot.iml
+.idea/inspectionProfiles/profiles_settings.xml
