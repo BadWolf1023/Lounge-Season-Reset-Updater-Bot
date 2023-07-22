@@ -79,9 +79,9 @@ async def send_file_with_players_in_each_class(interaction, is_rt, last_x_days, 
         activity_reqs[class_name_for_player][1].append(player_data.name)
         if need_to_have_played_after_date is None or last_event_date >= need_to_have_played_after_date:
             activity_reqs[class_name_for_player][0].append(player_data.name)
-               
-            
-    to_send = f"Active players in each {'RT' if is_rt else 'CT'} class during the last {last_x_days} days.\nNote: Active is defined as players who have played at least 1 event in the past {last_x_days} days, as you specified.\nNote: Total players is the total players in the class, regardless of whether they have played an event this season."
+
+    preface = "Using simulation cutoffs:" if use_test_cutoffs else "Currently in Lounge:"
+    to_send = f"{preface} Active players in each {'RT' if is_rt else 'CT'} class during the last {last_x_days} days.\nNote: Active is defined as players who have played at least 1 event in the past {last_x_days} days, as you specified.\nNote: Total players is the total players in the class, regardless of whether they have played an event this season."
     if need_to_have_played_after_date is None:
         to_send = f"Players in each {'RT' if is_rt else 'CT'} class.\nNote: All players are included, regardless of whether they have played an event this season."
     
@@ -132,7 +132,8 @@ async def send_active_players(interaction: discord.Interaction, is_rt, last_x_da
         activity_reqs[class_name_for_player][1] += 1
         if last_event_date >= need_to_have_played_after_date:
             activity_reqs[class_name_for_player][0] += 1
-    to_send = f"Number of active players in each {'RT' if is_rt else 'CT'} class during the last **{last_x_days} days**.\n**Note:** The total number of players is the number of players in the Class who have played 1 event or more this season.\n**Note:** The number of active players are the players that have played at least 1 event in the past **{last_x_days} days**, as you specified."
+    preface = "Using simulation cutoffs:" if use_test_cutoffs else "Currently in Lounge:"
+    to_send = f"{preface} Number of active players in each {'RT' if is_rt else 'CT'} class during the last **{last_x_days} days**.\n**Note:** The total number of players is the number of players in the Class who have played 1 event or more this season.\n**Note:** The number of active players are the players that have played at least 1 event in the past **{last_x_days} days**, as you specified."
     for cutoff_name, (active_players, total_players) in reversed(activity_reqs.items()):
         percentage_active = 0.0
         if total_players > 0:
@@ -157,7 +158,7 @@ async def send_tier_activity(interaction: discord.Interaction, is_rt, last_x_day
             results[tier] += 1
 
     total_events = sum(results.values())
-
+    
     to_send = f"Number of {'RT' if is_rt else 'CT'} events played in each tier in the last **{last_x_days} days**.\n"
     for tier_name, events_played in sorted(results.items(), reverse=True):
         percentage_played = events_played / total_events if total_events != 0 else 0.0
